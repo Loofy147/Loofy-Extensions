@@ -9,7 +9,9 @@ or production service boundary.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import stat
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -94,8 +96,23 @@ class SQLiteStore:
             raise ValueError("timeout_seconds must be positive")
         if str(path) != ":memory:":
             self.path = Path(path)
-            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             database_name = str(self.path)
+            if os.name == "posix":
+                # Create the main database with owner-only permissions before
+                # SQLite opens it, or tighten an existing file before reading it.
+                try:
+                    descriptor = os.open(
+                        database_name,
+                        os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                        0o600,
+                    )
+                except FileExistsError:
+                    if not self.path.is_file():
+                        raise StorageError("SQLite database path must refer to a regular file")
+                    os.chmod(database_name, 0o600)
+                else:
+                    os.close(descriptor)
         else:
             self.path = ":memory:"
             database_name = ":memory:"
@@ -109,13 +126,16 @@ class SQLiteStore:
             isolation_level=None,
         )
         self._connection.row_factory = sqlite3.Row
-        self._connection.execute("PRAGMA foreign_keys = ON")
-        self._connection.execute(f"PRAGMA busy_timeout = {int(timeout_seconds * 1000)}")
-        if database_name != ":memory:":
-            self._connection.execute("PRAGMA journal_mode = WAL")
-        self._connection.execute("PRAGMA synchronous = FULL")
         try:
+            self._restrict_database_files()
+            self._connection.execute("PRAGMA foreign_keys = ON")
+            self._connection.execute(f"PRAGMA busy_timeout = {int(timeout_seconds * 1000)}")
+            if database_name != ":memory:":
+                self._connection.execute("PRAGMA journal_mode = WAL")
+            self._connection.execute("PRAGMA synchronous = FULL")
             self._initialize_schema()
+            # SQLite creates the WAL/SHM sidecars as the schema is initialized.
+            self._restrict_database_files()
         except BaseException:
             self._connection.close()
             self._closed = True
@@ -565,6 +585,30 @@ class SQLiteStore:
         connection.execute(
             "CREATE INDEX idx_task_runs_target ON task_runs(target_extension_id, target_extension_version)"
         )
+
+    def _restrict_database_files(self) -> None:
+        """Restrict the SQLite database and sidecars to the owner on POSIX hosts.
+
+        The database can contain tenant IDs, authorization decisions and audit
+        metadata. This helper narrows permissions on the main file and active
+        WAL/SHM sidecars; it does not encrypt the database or replace host-level
+        directory, backup, or access-control policy.
+        """
+        if os.name != "posix" or not isinstance(self.path, Path):
+            return
+        candidates = (
+            self.path,
+            Path(f"{self.path}-wal"),
+            Path(f"{self.path}-shm"),
+        )
+        for candidate in candidates:
+            try:
+                mode = os.stat(candidate).st_mode
+            except FileNotFoundError:
+                continue
+            if not stat.S_ISREG(mode):
+                raise StorageError("SQLite database and sidecar paths must be regular files")
+            os.chmod(candidate, 0o600)
 
     def _ensure_open(self) -> None:
         if self._closed:
