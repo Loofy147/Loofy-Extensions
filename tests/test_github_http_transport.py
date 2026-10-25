@@ -6,6 +6,7 @@ import io
 import json
 import unittest
 import urllib.error
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from loofy_extensions.providers import (
@@ -233,7 +234,7 @@ class UrllibGitHubTransportTests(unittest.TestCase):
         transport = UrllibGitHubTransport()
         provider = GitHubRepositoryMetadataProvider(
             transport,
-            clock=lambda: __import__("datetime").datetime(2026, 10, 25, tzinfo=__import__("datetime").timezone.utc),
+            clock=lambda: datetime(2026, 10, 25, tzinfo=timezone.utc),
         )
         with patch("loofy_extensions.providers.github_http.urllib.request.build_opener", return_value=opener):
             result = provider.get_repository("owner", "repo")
