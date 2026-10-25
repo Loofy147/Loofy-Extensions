@@ -15,10 +15,10 @@ from loofy_extensions import (
     ExtensionRegistry,
     ExtensionState,
     GrantAuthority,
+    DuplicateExtensionVersionError,
 )
 from loofy_extensions.persistence import (
     CURRENT_SCHEMA_VERSION,
-    ImmutableVersionConflictError,
     SQLiteStore,
     SchemaVersionError,
     StorageClosedError,
@@ -86,7 +86,7 @@ class SQLitePersistenceTests(unittest.TestCase):
     def test_same_version_digest_conflict_is_rejected(self) -> None:
         changed = manifest()
         changed["metadata"]["description"] = "changed without a version bump"
-        with self.assertRaises(Exception):
+        with self.assertRaises(DuplicateExtensionVersionError):
             self.registry.register(changed)
         self.assertEqual(len(self.registry.list_extensions()), 1)
 
@@ -255,10 +255,9 @@ class SQLitePersistenceTests(unittest.TestCase):
     def test_schema_version_ahead_of_code_is_rejected(self) -> None:
         self.store.close()
         raw = sqlite3.connect(self.database_path)
-        raw.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
         raw.execute(
-            "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-            (CURRENT_SCHEMA_VERSION + 1, "2026-10-25T04:00:00Z"),
+            "UPDATE schema_migrations SET version = ?",
+            (CURRENT_SCHEMA_VERSION + 1,),
         )
         raw.commit()
         raw.close()
