@@ -8,6 +8,7 @@ from .github_gateway import (
     OperationAuditEvent,
     OperationAuthorizationError,
 )
+from .github_http import UrllibGitHubTransport
 from .github_metadata import (
     GitHubHttpResponse,
     GitHubRepositoryMetadata,
@@ -32,4 +33,5 @@ __all__ = [
     "ReadOnlyGitHubTransport",
     "RepositoryLinks",
     "RepositoryProvenance",
+    "UrllibGitHubTransport",
 ]
