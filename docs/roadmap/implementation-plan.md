@@ -54,10 +54,12 @@ Exit gate: the local reference adapter persists state atomically and the metadat
 - [x] Enforce a maximum input size and reject unsupported task IDs and non-JSON inputs.
 - [x] Make identical retries with the same run ID idempotent and reject changed requests that reuse a run ID.
 - [x] Add optional SQLite-backed task results and request fingerprints; validate replay and run-ID conflicts across a process-style restart.
+- [x] Add a host-side task authorization wrapper that overrides envelope identity from trusted caller context, checks policy before execution, and audits correlated outcomes.
+- [ ] Bind the authorization callback to the host's authoritative identity and task/resource policy service.
 - [ ] Add a hard timeout, OS-level CPU/memory controls and isolation before allowing tasks that can block or execute untrusted logic.
 - [ ] Add queues only when a task requires asynchronous execution.
 
-Exit gate: the allowlisted validation task is deterministic, input-bounded, and optionally durable. Any additional task requiring preemptive resource enforcement must run in an isolated worker.
+Exit gate: the allowlisted validation task is deterministic, input-bounded, optionally durable, and can be wrapped in a fail-closed authorization/audit boundary. The callback itself must come from trusted host services.
 
 ### Phase 4 — Event-driven integrations
 
