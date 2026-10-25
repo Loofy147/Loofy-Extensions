@@ -2,21 +2,31 @@
 
 ## Delivery sequence
 
-### Phase 0 — Contract and inventory (current pull request)
+### Phase 0 — Contract and inventory (completed)
 
 - [x] Inspect repository baseline.
 - [x] Define distinct extension kinds and contract metadata.
 - [x] Add versioned manifest schema and example.
 - [x] Add manifest validator, unit tests, and pull-request CI.
 - [x] Record architecture and threat model.
-- [ ] Review/merge initial contract and treat schema changes as versioned API changes.
+- [x] Merge the initial contract baseline; schema changes are treated as versioned API changes.
 
 Exit gate: manifests can be reviewed and validated before an extension is approved or executed.
 
-### Phase 1 — Registry model and read-only provider
+### Phase 1 — In-memory reference core (current)
 
-- [ ] Define registry entity/state model and storage requirements.
-- [ ] Add lifecycle state transitions with actor, version, source revision, permission request and review evidence.
+- [x] Add validated registration, immutable extension-version identity and manifest digest.
+- [x] Define a lifecycle state machine with actor, reason, approval evidence and audit events.
+- [x] Add default-deny capability authorization with exact scope and expiry checks.
+- [x] Add behavioral tests for rejection paths and policy scope.
+- [ ] Review the reference semantics before treating them as a stable API.
+
+Exit gate: contract and policy behavior are deterministic and testable without external credentials or writes.
+
+### Phase 2 — Durable registry and read-only provider
+
+- [ ] Define transactional persistence and migration requirements.
+- [ ] Persist lifecycle state and audit events atomically.
 - [ ] Implement one read-only repository metadata provider.
 - [ ] Normalize results while preserving source IDs, timestamps, links and provenance.
 - [ ] Add contract tests and operation-level audit events.
@@ -24,7 +34,7 @@ Exit gate: manifests can be reviewed and validated before an extension is approv
 
 Exit gate: read-only operation is authorized, attributable, testable, and revocable.
 
-### Phase 2 — Deterministic task runner
+### Phase 3 — Deterministic task runner
 
 - [ ] Define execution envelope, typed inputs/outputs, timeout, resource budget and error taxonomy.
 - [ ] Implement the manifest/configuration validation task as the first bounded action.
@@ -34,7 +44,7 @@ Exit gate: read-only operation is authorized, attributable, testable, and revoca
 
 Exit gate: execution is bounded and its results can be traced and reproduced.
 
-### Phase 3 — Event-driven integrations
+### Phase 4 — Event-driven integrations
 
 - [ ] Verify webhook signatures and event/action types.
 - [ ] Persist delivery IDs and implement idempotency.
@@ -44,7 +54,7 @@ Exit gate: execution is bounded and its results can be traced and reproduced.
 
 Exit gate: delivery and recovery semantics are explicit and tested.
 
-### Phase 4 — UI, provider packaging and AI tools
+### Phase 5 — UI, provider packaging and AI tools
 
 - [ ] Expose approved extensions and actual grants in a catalog UI/API.
 - [ ] Add install/configure/validate/enable/disable/update/rollback state machine.
@@ -55,7 +65,7 @@ Exit gate: delivery and recovery semantics are explicit and tested.
 
 Exit gate: users can inspect capabilities, data flows, source identity, run evidence, and revocation state.
 
-### Phase 5 — Third-party runtime and ecosystem controls
+### Phase 6 — Third-party runtime and ecosystem controls
 
 - [ ] Add sandboxed execution, egress allowlists and resource quotas.
 - [ ] Verify artifact digest, publisher/source provenance, license and dependency/SBOM evidence.
@@ -65,7 +75,7 @@ Exit gate: users can inspect capabilities, data flows, source identity, run evid
 
 Exit gate: each supported trust tier has an evidence-based approval and isolation policy.
 
-## Non-goals for the first milestone
+## Non-goals for the current milestone
 
 - No database/backend requirement yet.
 - No public third-party marketplace.
