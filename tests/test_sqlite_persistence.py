@@ -34,7 +34,7 @@ FIXED_NOW = datetime(2026, 10, 25, 4, 0, tzinfo=timezone.utc)
 
 def manifest() -> dict[str, object]:
     return json.loads(
-        next(DEFAULT_EXAMPLES.rglob("extension.json")).read_text(encoding="utf-8")
+        (DEFAULT_EXAMPLES / "manifest-validator" / "extension.json").read_text(encoding="utf-8")
     )
 
 
