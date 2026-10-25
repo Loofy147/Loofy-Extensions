@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+import tempfile
 import unittest
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from dataclasses import replace
 
-from loofy_extensions import CapabilityGrant, ExtensionRegistry, ExtensionState
+from loofy_extensions import CapabilityGrant, ExtensionRegistry, ExtensionState, SQLiteStore
 from loofy_extensions.providers import (
     AuthorizationContextUnavailable,
     AuthorizedGitHubMetadataReader,
@@ -144,6 +147,11 @@ class AuthorizedGitHubMetadataReaderTests(unittest.TestCase):
         self.assertEqual([event.outcome for event in self.audit.events], ["authorized", "succeeded"])
         self.assertEqual(self.audit.events[-1].source_id, "77")
         self.assertEqual(self.audit.events[-1].manifest_digest, self.record.manifest_digest)
+        self.assertEqual(
+            self.audit.events[0].correlation_id,
+            self.audit.events[1].correlation_id,
+        )
+        self.assertTrue(self.audit.events[0].correlation_id)
 
     def test_disabled_extension_is_denied_before_provider_call(self) -> None:
         disabled = replace(self.record, state=ExtensionState.DISABLED)
@@ -177,6 +185,27 @@ class AuthorizedGitHubMetadataReaderTests(unittest.TestCase):
         with self.assertRaises(OSError):
             reader.read_repository("owner", "repo", caller=self.caller)
         self.assertEqual(self.transport.urls, [])
+
+    def test_durable_audit_failure_blocks_provider_call(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            store = SQLiteStore(Path(temporary_directory) / "operation-audit.sqlite3")
+            try:
+                store._connection.execute(
+                    """
+                    CREATE TRIGGER fail_operation_audit
+                    BEFORE INSERT ON operation_audit_events
+                    BEGIN
+                        SELECT RAISE(ABORT, 'injected operation audit failure');
+                    END
+                    """
+                )
+                reader = self.make_reader((self.grant,), audit_sink=store)
+                with self.assertRaises(sqlite3.IntegrityError):
+                    reader.read_repository("owner", "repo", caller=self.caller)
+                self.assertEqual(self.transport.urls, [])
+                self.assertEqual(store.events, ())
+            finally:
+                store.close()
 
 
 if __name__ == "__main__":
