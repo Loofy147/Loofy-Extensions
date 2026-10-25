@@ -23,6 +23,7 @@ from loofy_extensions.persistence import (
     SchemaVersionError,
     StorageClosedError,
 )
+from loofy_extensions.providers.github_gateway import OperationAuditEvent
 from loofy_extensions.validation import DEFAULT_EXAMPLES
 
 
@@ -50,6 +51,48 @@ class SQLitePersistenceTests(unittest.TestCase):
     def test_schema_migration_and_integrity_check(self) -> None:
         self.assertEqual(self.store.schema_version, CURRENT_SCHEMA_VERSION)
         self.assertEqual(self.store.integrity_check(), ("ok",))
+
+    def test_v1_schema_migrates_forward_to_operation_audit_v2(self) -> None:
+        self.store.close()
+        raw = sqlite3.connect(self.database_path)
+        raw.execute("DROP INDEX IF EXISTS idx_operation_audit_scope_time")
+        raw.execute("DROP INDEX IF EXISTS idx_operation_audit_correlation")
+        raw.execute("DROP TABLE IF EXISTS operation_audit_events")
+        raw.execute("DELETE FROM schema_migrations WHERE version > 1")
+        raw.commit()
+        raw.close()
+
+        upgraded_store = SQLiteStore(self.database_path)
+        self.store = upgraded_store
+        self.assertEqual(upgraded_store.schema_version, 2)
+        self.assertEqual(upgraded_store.events, ())
+        self.assertEqual(upgraded_store.integrity_check(), ("ok",))
+
+    def test_operation_audit_events_survive_restart(self) -> None:
+        event = OperationAuditEvent(
+            event_type="repository.metadata.read",
+            extension_id="com.example.extension",
+            extension_version="1.2.3",
+            manifest_digest="sha256:abc",
+            principal_id="user:alice",
+            tenant_id="tenant:alpha",
+            capability="repository.metadata.read",
+            resource_id="github:repository:owner/repo",
+            environment="test",
+            outcome="succeeded",
+            decision_code="ok",
+            occurred_at=FIXED_NOW,
+            source_id="77",
+            correlation_id="correlation-001",
+        )
+        self.store.append(event)
+        self.assertEqual(self.store.events, (event,))
+        self.store.close()
+
+        reopened_store = SQLiteStore(self.database_path)
+        self.store = reopened_store
+        self.assertEqual(reopened_store.events, (event,))
+        self.assertEqual(reopened_store.events[0].correlation_id, "correlation-001")
 
     def test_registry_record_and_lifecycle_audit_survive_restart(self) -> None:
         evaluating = self.registry.transition(
