@@ -142,6 +142,7 @@ class GrantBoundaryTests(unittest.TestCase):
                 grant_id="grant-naive",
                 key=self.record.key,
                 principal_id=self.request.principal_id,
+                tenant_id=self.request.tenant_id,
                 capability=self.request.capability,
                 resource_id=self.request.resource_id,
                 environment=self.request.environment,
