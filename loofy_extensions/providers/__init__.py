@@ -1,5 +1,13 @@
-"""Read-only provider adapters."""
+"""Read-only provider adapters and host-side guarded readers."""
 
+from .github_gateway import (
+    AuthorizationContextUnavailable,
+    AuthorizedGitHubMetadataReader,
+    CallerContext,
+    InMemoryOperationAuditSink,
+    OperationAuditEvent,
+    OperationAuthorizationError,
+)
 from .github_metadata import (
     GitHubHttpResponse,
     GitHubRepositoryMetadata,
@@ -11,9 +19,15 @@ from .github_metadata import (
 )
 
 __all__ = [
+    "AuthorizationContextUnavailable",
+    "AuthorizedGitHubMetadataReader",
+    "CallerContext",
     "GitHubHttpResponse",
     "GitHubRepositoryMetadata",
     "GitHubRepositoryMetadataProvider",
+    "InMemoryOperationAuditSink",
+    "OperationAuditEvent",
+    "OperationAuthorizationError",
     "ProviderError",
     "ReadOnlyGitHubTransport",
     "RepositoryLinks",
