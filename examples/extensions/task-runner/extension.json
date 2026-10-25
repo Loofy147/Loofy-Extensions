@@ -1,0 +1,68 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Loofy147/Loofy-Extensions/main/schemas/extension-manifest.schema.json",
+  "apiVersion": "extensions.loofy/v1alpha1",
+  "kind": "Extension",
+  "metadata": {
+    "id": "com.loofy.extensions.task-runner",
+    "name": "Built-in Manifest Validation Task Runner",
+    "version": "1.0.0",
+    "publisher": "Loofy147",
+    "description": "Host-owned manifest validation task contract. Registration does not execute an entrypoint or grant permissions.",
+    "license": "MIT",
+    "source": "https://github.com/Loofy147/Loofy-Extensions",
+    "homepage": "https://github.com/Loofy147/Loofy-Extensions",
+    "tags": [
+      "validation",
+      "task-runner",
+      "host-owned"
+    ]
+  },
+  "runtime": {
+    "type": "trusted-host-task",
+    "entrypoint": "loofy_extensions.task_gateway:AuthorizedTaskRunner",
+    "network": {
+      "default": "deny",
+      "allowHosts": []
+    }
+  },
+  "capabilities": {
+    "provides": [
+      "manifest.validate"
+    ],
+    "requires": [
+      "task.manifest.validate"
+    ]
+  },
+  "permissions": {
+    "requested": [
+      "task.manifest.validate"
+    ]
+  },
+  "triggers": [
+    {
+      "type": "manual",
+      "events": [
+        "validate"
+      ]
+    }
+  ],
+  "execution": {
+    "timeoutSeconds": 5,
+    "maxMemoryMiB": 256,
+    "cpuLimit": "1"
+  },
+  "secrets": {
+    "references": []
+  },
+  "approval": {
+    "writeOperations": "none"
+  },
+  "observability": {
+    "emits": [
+      "started",
+      "completed",
+      "failed",
+      "permission-denied"
+    ]
+  }
+}
