@@ -143,7 +143,7 @@ class AuthorizedTaskRunnerTests(unittest.TestCase):
     def test_invalid_policy_decision_fails_closed(self) -> None:
         self.gateway = AuthorizedTaskRunner(
             self.runner,
-            authorizer=FakeAuthorizer(None),
+            authorizer=FakeAuthorizer(object()),
             audit_sink=self.audit,
             clock=lambda: self.now,
         )
