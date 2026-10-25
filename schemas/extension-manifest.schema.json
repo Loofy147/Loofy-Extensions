@@ -14,6 +14,11 @@
   ],
   "additionalProperties": false,
   "properties": {
+    "$schema": {
+      "const": "https://raw.githubusercontent.com/Loofy147/Loofy-Extensions/main/schemas/extension-manifest.schema.json",
+      "format": "uri",
+      "type": "string"
+    },
     "apiVersion": {
       "const": "extensions.loofy/v1alpha1"
     },
