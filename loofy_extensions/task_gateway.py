@@ -182,7 +182,7 @@ class AuthorizedTaskRunner:
                 decision_code="invalid-authorization-decision",
                 occurred_at=self._now(),
                 correlation_id=run_id,
-                )
+            )
             raise TaskAuthorizationContextUnavailable(
                 "Task authorization did not return a valid decision; task request denied."
             )
@@ -198,7 +198,6 @@ class AuthorizedTaskRunner:
                 decision_code=denial_code,
                 occurred_at=self._now(),
                 correlation_id=run_id,
-                input_digest=input_digest,
             )
             raise TaskAuthorizationError(denial_code, decision.message or "Task request denied.")
 
@@ -212,7 +211,6 @@ class AuthorizedTaskRunner:
             decision_code=self._required_id(decision.code, "decision.code", maximum=128),
             occurred_at=self._now(),
             correlation_id=run_id,
-            input_digest=input_digest,
         )
         try:
             result = self._runner.run(authorized_envelope)
