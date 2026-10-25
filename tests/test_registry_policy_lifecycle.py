@@ -25,7 +25,7 @@ from loofy_extensions.validation import DEFAULT_EXAMPLES
 
 def enabled_record(registry: ExtensionRegistry):
     record = registry.register(
-        json.loads(next(DEFAULT_EXAMPLES.rglob("extension.json")).read_text(encoding="utf-8"))
+        json.loads((DEFAULT_EXAMPLES / "manifest-validator" / "extension.json").read_text(encoding="utf-8"))
     )
     record = registry.transition(record.key.extension_id, record.key.version, ExtensionState.EVALUATING, actor="test", reason="begin review")
     record = registry.transition(record.key.extension_id, record.key.version, ExtensionState.APPROVED, actor="reviewer", reason="review passed", approval_ref="review:unit-test")
@@ -39,7 +39,7 @@ def enabled_record(registry: ExtensionRegistry):
 class ExtensionRegistryTests(unittest.TestCase):
     def setUp(self) -> None:
         self.registry = ExtensionRegistry()
-        self.sample_path = next(DEFAULT_EXAMPLES.rglob("extension.json"))
+        self.sample_path = (DEFAULT_EXAMPLES / "manifest-validator" / "extension.json")
         self.sample = json.loads(self.sample_path.read_text(encoding="utf-8"))
 
     def test_register_validates_and_starts_discovered(self) -> None:
