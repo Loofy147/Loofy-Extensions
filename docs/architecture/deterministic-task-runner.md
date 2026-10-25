@@ -1,6 +1,6 @@
 # Deterministic Manifest Validation Task Runner
 
-Status: first bounded host-owned task implementation. It is a pure in-process reference task, not a general plugin runtime or isolated worker.
+Status: first bounded host-owned task implementation. It runs in-process by default and supports an opt-in isolated subprocess for the built-in validator. It is not a general plugin runtime or complete sandbox.
 
 ## Supported task
 
@@ -31,6 +31,14 @@ Construct `TaskRunner(store=sqlite_store)` with the same `SQLiteStore` used by t
 
 Because the task only validates input and has no side effects, redundant validation under a rare multi-instance race is safe. This does not provide a general exactly-once execution guarantee for future side-effecting tasks.
 
+## Optional isolated validation mode
+
+For callers that need stronger containment for this built-in task, construct `TaskRunner(isolated_validation=True)`. The runner launches the fixed package-owned `validation_worker.py` through the current Python interpreter in isolated mode; it does not load a path, module, or entrypoint from the manifest.
+
+The worker accepts only a JSON object containing the canonical manifest snapshot and the schema supplied by the parent. It applies a parent-configured wall-clock timeout, bounded request/response sizes, and on POSIX hosts sets CPU-time, address-space, and core-dump limits. The parent treats timeout, startup, resource-limit, invalid-response, and oversized-response conditions as stable task errors and does not expose worker stderr to callers.
+
+This mode is opt-in, and the default in-process behavior remains unchanged. POSIX CPU/address-space limits are platform-specific; on non-POSIX platforms the wall-clock timeout and input/output bounds still apply. The worker executes only trusted validator code, makes no network requests, and must not be described as a network sandbox or a safe executor for arbitrary extensions. Third-party code still requires a separately designed sandbox and egress policy.
+
 ## Authorization and audit boundary
 
 Applications exposed to users should wrap the bare runner in `AuthorizedTaskRunner`. It accepts `TaskCallerContext` from the host authentication layer and overwrites actor, tenant, and environment fields in the task envelope before authorization or execution. The injected `TaskAuthorizer` receives the principal, tenant, task ID, resource and environment. A denial, invalid decision, or policy callback failure prevents the task from running.
@@ -43,7 +51,7 @@ This wrapper does not authenticate caller context and does not implement policy 
 
 The runner limits manifest input size (default 256 KiB), rejects non-JSON values and unknown task IDs, and runs only one built-in schema-validation handler. This bounds the present task's input and accepted workload.
 
-It does **not** yet enforce a hard preemptive timeout, OS-level CPU or memory quota, worker isolation, or queue supervision. A synchronous Python function cannot be safely preempted by checking elapsed time afterward. Tasks that need those guarantees must run in a separate constrained worker before they are added to the allowlist.
+In default in-process mode, no hard preemptive timeout or OS-level resource quota is applied. In opt-in isolated mode, the built-in validator runs in a subprocess with a wall-clock deadline and POSIX CPU/address-space/core limits. This still does not provide network isolation, a queue supervisor, or a general sandbox for untrusted task code.
 
 ## Verification
 
@@ -54,4 +62,4 @@ python -m unittest discover --start-directory tests --verbose
 python scripts/validate_manifests.py
 ~~~
 
-Tests cover valid and invalid manifests, attribution and digests, same-run retries, conflicting run IDs, unsupported task rejection, input limits, durable result replay, caller-context override, policy denial/failure, audit-before-run behavior, and correlated operation events.
+Tests cover valid and invalid manifests, attribution and digests, same-run retries, conflicting run IDs, unsupported task rejection, input limits, isolated worker validation/timeout/failure/limit configuration, durable result replay, caller-context override, policy denial/failure, audit-before-run behavior, and correlated operation events.

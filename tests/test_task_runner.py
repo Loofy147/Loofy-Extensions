@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import copy
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 
 from loofy_extensions import SQLiteStore
@@ -141,6 +143,61 @@ class TaskRunnerTests(unittest.TestCase):
         second = self.runner.run(envelope(run_id="run-b"))
         self.assertEqual(first.input_digest, second.input_digest)
         self.assertEqual(first.output_digest, second.output_digest)
+
+    def test_isolated_worker_validates_manifest(self) -> None:
+        runner = TaskRunner(
+            isolated_validation=True,
+            worker_timeout_seconds=5.0,
+            worker_cpu_seconds=2,
+            worker_memory_mib=256,
+        )
+        result = runner.run(envelope(run_id="isolated-valid-001"))
+        self.assertTrue(result.valid)
+        self.assertEqual(result.outcome, "succeeded")
+        self.assertTrue(result.errors == ())
+
+    def test_isolated_worker_returns_invalid_manifest_errors(self) -> None:
+        invalid = sample_manifest()
+        del invalid["metadata"]["license"]
+        runner = TaskRunner(isolated_validation=True)
+        result = runner.run(envelope(invalid, run_id="isolated-invalid-001"))
+        self.assertFalse(result.valid)
+        self.assertEqual(result.outcome, "validation_failed")
+        self.assertTrue(any("license" in error for error in result.errors))
+
+    def test_isolated_worker_timeout_maps_to_stable_task_error(self) -> None:
+        runner = TaskRunner(isolated_validation=True)
+        timeout = subprocess.TimeoutExpired(cmd=["python", "validation_worker.py"], timeout=0.01)
+        with patch("loofy_extensions.tasks.subprocess.run", side_effect=timeout):
+            with self.assertRaises(TaskExecutionError) as context:
+                runner.run(envelope(run_id="isolated-timeout-001"))
+        self.assertEqual(context.exception.code, "task-timeout")
+        self.assertEqual(runner.history, ())
+
+    def test_isolated_worker_failure_does_not_expose_stderr(self) -> None:
+        runner = TaskRunner(isolated_validation=True)
+        failed = subprocess.CompletedProcess(
+            args=["python", "validation_worker.py"],
+            returncode=2,
+            stdout=b"",
+            stderr=b"secret internal exception text",
+        )
+        with patch("loofy_extensions.tasks.subprocess.run", return_value=failed):
+            with self.assertRaises(TaskExecutionError) as context:
+                runner.run(envelope(run_id="isolated-failure-001"))
+        self.assertEqual(context.exception.code, "worker-failed")
+        self.assertNotIn("secret internal exception text", str(context.exception))
+        self.assertEqual(runner.history, ())
+
+    def test_worker_resource_limits_are_validated(self) -> None:
+        with self.assertRaises(ValueError):
+            TaskRunner(isolated_validation=True, worker_timeout_seconds=0)
+        with self.assertRaises(ValueError):
+            TaskRunner(isolated_validation=True, worker_cpu_seconds=True)
+        with self.assertRaises(ValueError):
+            TaskRunner(isolated_validation=True, worker_memory_mib=32)
+        with self.assertRaises(ValueError):
+            TaskRunner(isolated_validation=True, worker_max_output_bytes=0)
 
     def test_durable_result_survives_restart_and_run_id_conflicts_persist(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

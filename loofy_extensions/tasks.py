@@ -9,8 +9,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import os
+import subprocess
+import sys
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from threading import RLock
 from time import perf_counter
 from typing import Any, Callable, Mapping, Protocol
@@ -131,8 +137,10 @@ class TaskRunner:
 
     The input-size ceiling bounds the only currently supported task's workload.
     This class is not a sandbox, a process supervisor or a general execution
-    runtime; tasks that need hard preemptive time/memory limits require a separate
-    isolated worker design.
+    runtime. An optional isolated validation mode starts the fixed, package-owned
+    worker in a subprocess with a wall-clock timeout and POSIX CPU/address-space
+    limits. That worker accepts only the schema-validation request protocol; it
+    is not a general plugin sandbox or a facility for running arbitrary code.
     """
 
     def __init__(
@@ -143,16 +151,146 @@ class TaskRunner:
         clock: Callable[[], datetime] | None = None,
         monotonic: Callable[[], float] | None = None,
         store: TaskResultStore | None = None,
+        isolated_validation: bool = False,
+        worker_timeout_seconds: float = 5.0,
+        worker_cpu_seconds: int = 2,
+        worker_memory_mib: int = 256,
+        worker_max_output_bytes: int = 1024 * 1024,
     ) -> None:
         if isinstance(max_input_bytes, bool) or not isinstance(max_input_bytes, int) or max_input_bytes < 1:
             raise ValueError("max_input_bytes must be a positive integer")
+        if not isinstance(isolated_validation, bool):
+            raise ValueError("isolated_validation must be a boolean")
+        if (
+            isinstance(worker_timeout_seconds, bool)
+            or not isinstance(worker_timeout_seconds, (int, float))
+            or not math.isfinite(worker_timeout_seconds)
+            or worker_timeout_seconds <= 0
+        ):
+            raise ValueError("worker_timeout_seconds must be a positive number")
+        if (
+            isinstance(worker_cpu_seconds, bool)
+            or not isinstance(worker_cpu_seconds, int)
+            or worker_cpu_seconds < 1
+        ):
+            raise ValueError("worker_cpu_seconds must be a positive integer")
+        if (
+            isinstance(worker_memory_mib, bool)
+            or not isinstance(worker_memory_mib, int)
+            or worker_memory_mib < 64
+        ):
+            raise ValueError("worker_memory_mib must be an integer of at least 64 MiB")
+        if (
+            isinstance(worker_max_output_bytes, bool)
+            or not isinstance(worker_max_output_bytes, int)
+            or worker_max_output_bytes < 256
+        ):
+            raise ValueError("worker_max_output_bytes must be an integer of at least 256 bytes")
         self._max_input_bytes = max_input_bytes
         self._schema = load_schema(schema_path)
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._monotonic = monotonic or perf_counter
         self._store = store
+        self._isolated_validation = isolated_validation
+        self._worker_timeout_seconds = float(worker_timeout_seconds)
+        self._worker_cpu_seconds = worker_cpu_seconds
+        self._worker_memory_mib = worker_memory_mib
+        self._worker_max_output_bytes = worker_max_output_bytes
         self._results: dict[str, tuple[str, TaskResult]] = {}
         self._lock = RLock()
+
+    def _validate_manifest(self, manifest: Mapping[str, Any]) -> list[str]:
+        """Validate in process by default or in the fixed isolated worker."""
+        if not self._isolated_validation:
+            return validate_manifest_data(manifest, self._schema)
+
+        schema_bytes = _canonical_json(self._schema)
+        request_payload = _canonical_json({"manifest": manifest, "schema": self._schema})
+        max_request_bytes = self._max_input_bytes + len(schema_bytes) + 1024
+        if len(request_payload) > max_request_bytes:
+            raise TaskExecutionError(
+                "worker-input-too-large",
+                "Validation worker request exceeds the configured input bound.",
+            )
+
+        worker_path = Path(__file__).resolve().with_name("validation_worker.py")
+        command = [
+            sys.executable,
+            "-I",
+            "-B",
+            str(worker_path),
+            "--cpu-seconds",
+            str(self._worker_cpu_seconds),
+            "--memory-mib",
+            str(self._worker_memory_mib),
+            "--max-input-bytes",
+            str(max_request_bytes),
+            "--max-output-bytes",
+            str(self._worker_max_output_bytes),
+        ]
+        try:
+            with tempfile.TemporaryDirectory(prefix="loofy-validation-") as working_directory:
+                completed = subprocess.run(
+                    command,
+                    input=request_payload,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=working_directory,
+                    timeout=self._worker_timeout_seconds,
+                    check=False,
+                    close_fds=True,
+                )
+        except subprocess.TimeoutExpired as exc:
+            raise TaskExecutionError(
+                "task-timeout",
+                "Manifest validation exceeded its wall-clock limit.",
+            ) from exc
+        except OSError as exc:
+            raise TaskExecutionError(
+                "worker-unavailable",
+                "The isolated validation worker could not be started.",
+            ) from exc
+
+        if completed.returncode == 3:
+            raise TaskExecutionError(
+                "worker-output-too-large",
+                "The isolated validation worker result exceeded the configured output bound.",
+            )
+        if completed.returncode == 4:
+            raise TaskExecutionError(
+                "worker-limits-unavailable",
+                "The isolated validation worker could not apply required platform resource limits.",
+            )
+        if completed.returncode != 0:
+            raise TaskExecutionError(
+                "worker-failed",
+                "The isolated validation worker failed without a valid result.",
+            )
+        if len(completed.stdout) > self._worker_max_output_bytes:
+            raise TaskExecutionError(
+                "worker-output-too-large",
+                "The isolated validation worker result exceeded the configured output bound.",
+            )
+        try:
+            response = json.loads(completed.stdout.decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise TaskExecutionError(
+                "worker-output-invalid",
+                "The isolated validation worker returned an invalid response.",
+            ) from exc
+        if (
+            not isinstance(response, dict)
+            or not isinstance(response.get("valid"), bool)
+            or not isinstance(response.get("errors"), list)
+            or not all(isinstance(error, str) for error in response["errors"])
+            or response["valid"] != (len(response["errors"]) == 0)
+            or set(response) != {"valid", "errors"}
+        ):
+            raise TaskExecutionError(
+                "worker-output-invalid",
+                "The isolated validation worker returned an invalid response shape.",
+            )
+        return response["errors"]
 
     @property
     def supported_tasks(self) -> frozenset[str]:
@@ -225,7 +363,7 @@ class TaskRunner:
 
             started_at = _aware_utc(self._clock(), "clock")
             start_tick = self._monotonic()
-            errors = tuple(validate_manifest_data(normalized_manifest, self._schema))
+            errors = tuple(self._validate_manifest(normalized_manifest))
             valid = not errors
             output_bytes = _canonical_json({"valid": valid, "errors": errors})
             output_digest = "sha256:" + hashlib.sha256(output_bytes).hexdigest()

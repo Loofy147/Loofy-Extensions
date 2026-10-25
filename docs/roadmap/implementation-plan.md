@@ -57,7 +57,8 @@ Exit gate: the local reference adapter persists state atomically and the metadat
 - [x] Add optional SQLite-backed task results and request fingerprints; validate replay and run-ID conflicts across a process-style restart.
 - [x] Add a host-side task authorization wrapper that overrides envelope identity from trusted caller context, checks policy before execution, and audits correlated outcomes.
 - [ ] Bind the authorization callback to the host's authoritative identity and task/resource policy service.
-- [ ] Add a hard timeout, OS-level CPU/memory controls and isolation before allowing tasks that can block or execute untrusted logic.
+- [x] Add opt-in isolated subprocess execution for the built-in manifest validator, with a wall-clock deadline, POSIX CPU/address-space/core-file limits, and bounded JSON request/response messages.
+- [ ] Design full process/network sandboxing before adding any third-party or otherwise untrusted task; the validator worker is not a general plugin sandbox.
 - [ ] Add queues only when a task requires asynchronous execution.
 
 Exit gate: the allowlisted validation task is deterministic, input-bounded, optionally durable, and can be wrapped in a fail-closed authorization/audit boundary. The callback itself must come from trusted host services.
