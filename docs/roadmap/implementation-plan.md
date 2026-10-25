@@ -13,26 +13,30 @@
 
 Exit gate: manifests can be reviewed and validated before an extension is approved or executed.
 
-### Phase 1 — In-memory reference core (current)
+### Phase 1 — In-memory reference core (contract baseline hardened)
 
 - [x] Add validated registration, immutable extension-version identity and manifest digest.
 - [x] Define a lifecycle state machine with actor, reason, approval evidence and audit events.
 - [x] Add default-deny capability authorization with exact scope and expiry checks.
 - [x] Add behavioral tests for rejection paths and policy scope.
-- [ ] Review the reference semantics before treating them as a stable API.
+- [x] Review lifecycle recovery, capability-risk classification, grant expiry and timestamp semantics.
+- [x] Document approval-reference limitations and the distinction between manifest, artifact and source provenance.
+- [x] Run the full unit suite and manifest validator successfully in CI.
 
-Exit gate: contract and policy behavior are deterministic and testable without external credentials or writes.
+Exit gate: the reference contract is testable without external credentials or writes. This is not a production authorization or persistence system.
 
-### Phase 2 — Durable registry and read-only provider
+### Phase 2 — Durable registry and read-only provider (in progress)
 
 - [ ] Define transactional persistence and migration requirements.
 - [ ] Persist lifecycle state and audit events atomically.
-- [ ] Implement one read-only repository metadata provider.
-- [ ] Normalize results while preserving source IDs, timestamps, links and provenance.
-- [ ] Add contract tests and operation-level audit events.
+- [x] Implement a narrow read-only GitHub.com repository metadata provider behind an injected transport contract.
+- [x] Normalize repository identity, visibility, default branch, links, source timestamps, retrieval time and ETag provenance.
+- [x] Add provider contract tests for identity mismatch, untrusted input, upstream failures and timestamp validity.
+- [ ] Wire the provider through the host's real identity and authorization boundary.
+- [ ] Add host-level operation audit events with principal, tenant, resource, outcome and correlation ID.
 - [ ] Demonstrate disable/revoke behavior without external writes.
 
-Exit gate: read-only operation is authorized, attributable, testable, and revocable.
+Exit gate: read-only operation is authorized, attributable, testable, and revocable. The provider module alone does not satisfy the full gate.
 
 ### Phase 3 — Deterministic task runner
 
@@ -77,7 +81,7 @@ Exit gate: each supported trust tier has an evidence-based approval and isolatio
 
 ## Non-goals for the current milestone
 
-- No database/backend requirement yet.
+- No general-purpose production backend before its need is demonstrated by the next milestone.
 - No public third-party marketplace.
 - No arbitrary executable plugin installation.
 - No general secret vault implemented by this repository.
