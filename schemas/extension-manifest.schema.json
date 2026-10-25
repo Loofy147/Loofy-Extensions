@@ -1,0 +1,400 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Loofy147/Loofy-Extensions/main/schemas/extension-manifest.schema.json",
+  "title": "Loofy Extensions Manifest",
+  "description": "Versioned descriptive contract. Validation does not grant permissions or authorize execution.",
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "runtime",
+    "capabilities",
+    "permissions"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "extensions.loofy/v1alpha1"
+    },
+    "kind": {
+      "const": "Extension"
+    },
+    "metadata": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "version",
+        "publisher",
+        "description",
+        "license",
+        "source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+([.-][a-z0-9]+)*$",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?$",
+          "maxLength": 80
+        },
+        "publisher": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "source": {
+          "type": "string",
+          "format": "uri"
+        },
+        "homepage": {
+          "type": "string",
+          "format": "uri"
+        },
+        "documentation": {
+          "type": "string",
+          "format": "uri"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          },
+          "uniqueItems": true,
+          "maxItems": 30
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "enum": [
+            "declarative",
+            "hosted-service",
+            "github-app",
+            "github-action",
+            "reusable-workflow",
+            "mcp-server",
+            "wasm",
+            "oci",
+            "trusted-host-task"
+          ]
+        },
+        "entrypoint": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "endpoint": {
+          "type": "string",
+          "format": "uri"
+        },
+        "artifact": {
+          "type": "object",
+          "required": [
+            "source",
+            "revision"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "source": {
+              "type": "string",
+              "format": "uri"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{40}$",
+              "description": "Full immutable Git commit SHA, not a movable tag."
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            }
+          }
+        },
+        "network": {
+          "type": "object",
+          "required": [
+            "default",
+            "allowHosts"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "default": {
+              "enum": [
+                "deny",
+                "allowlist"
+              ]
+            },
+            "allowHosts": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 253
+              },
+              "uniqueItems": true,
+              "maxItems": 100
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "trusted-host-task",
+                  "github-action",
+                  "reusable-workflow",
+                  "mcp-server",
+                  "wasm",
+                  "oci"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "entrypoint"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "hosted-service",
+                  "github-app"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "endpoint"
+                ]
+              },
+              {
+                "required": [
+                  "artifact"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "capabilities": {
+      "type": "object",
+      "required": [
+        "provides",
+        "requires"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "provides": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*([._:-][a-z0-9]+)*$"
+          },
+          "uniqueItems": true,
+          "maxItems": 100
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*([._:-][a-z0-9]+)*$"
+          },
+          "uniqueItems": true,
+          "maxItems": 100
+        }
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "required": [
+        "requested"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "requested": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*([._:-][a-z0-9]+)*$"
+          },
+          "uniqueItems": true,
+          "maxItems": 100
+        }
+      }
+    },
+    "triggers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "type",
+          "events"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "enum": [
+              "manual",
+              "schedule",
+              "webhook",
+              "pull_request",
+              "push",
+              "issue",
+              "deployment"
+            ]
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true,
+            "maxItems": 100
+          }
+        }
+      },
+      "maxItems": 30
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 900
+        },
+        "maxMemoryMiB": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 16384
+        },
+        "cpuLimit": {
+          "type": "string",
+          "pattern": "^[0-9]+([.][0-9]+)?$",
+          "maxLength": 12
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "required": [
+        "references"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "references": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "vaultRef",
+              "scope"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$",
+                "maxLength": 100
+              },
+              "vaultRef": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "scope": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              }
+            }
+          },
+          "uniqueItems": true,
+          "maxItems": 50
+        }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "writeOperations": {
+          "enum": [
+            "none",
+            "policy-controlled",
+            "human-required"
+          ]
+        }
+      }
+    },
+    "observability": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "emits": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "started",
+              "completed",
+              "failed",
+              "degraded",
+              "permission-denied"
+            ]
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}
