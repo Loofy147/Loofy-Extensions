@@ -204,8 +204,8 @@ class GrantAuthority:
             reason=reason,
         )
         now = self._now()
-        if expires_at.tzinfo is None or expires_at.utcoffset() is None:
-            raise GrantPolicyError("invalid-expiry", "Grant expiry must be timezone-aware.")
+        if not isinstance(expires_at, datetime) or expires_at.tzinfo is None or expires_at.utcoffset() is None:
+            raise GrantPolicyError("invalid-expiry", "Grant expiry must be a timezone-aware datetime.")
         if expires_at <= now:
             raise GrantPolicyError("invalid-expiry", "Grant expiry must be in the future.")
 
@@ -213,6 +213,8 @@ class GrantAuthority:
             record = self._record_loader(key)
         except Exception:
             raise GrantPolicyError("extension-unavailable", "Trusted extension state is unavailable.") from None
+        if not isinstance(record, ExtensionRecord):
+            raise GrantPolicyError("extension-unavailable", "Trusted extension state is invalid.")
         if record.key != key:
             raise GrantPolicyError("extension-version-mismatch", "Loaded extension version does not match the requested key.")
         if record.state != ExtensionState.ENABLED:
@@ -239,7 +241,9 @@ class GrantAuthority:
         if not can_grant:
             raise GrantPolicyError("grant-not-authorized", "The actor cannot grant this capability for the requested scope.")
 
-        if is_high_impact_capability(capability) and not approval_ref:
+        if is_high_impact_capability(capability) and (
+            not isinstance(approval_ref, str) or not approval_ref.strip()
+        ):
             raise GrantPolicyError("approval-required", "High-impact capabilities require approval evidence.")
 
         grant_id = self._grant_id_factory()
