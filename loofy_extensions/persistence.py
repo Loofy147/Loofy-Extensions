@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Iterator
 
 if TYPE_CHECKING:
     from .providers.github_gateway import OperationAuditEvent
+    from .tasks import TaskResult
 
 from .grants import GrantAuditEvent, GrantConflictError, GrantPolicyError
 from .lifecycle import transition_record
@@ -26,7 +27,7 @@ from .models import AuditEvent, ExtensionKey, ExtensionRecord, ExtensionState
 from .policy import CapabilityGrant
 
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 
 class StorageError(RuntimeError):
@@ -230,6 +231,112 @@ class SQLiteStore:
                 ),
             )
 
+    @property
+    def task_run_results(self) -> tuple[TaskResult, ...]:
+        """Return persisted task results in stable run-ID order."""
+        with self._lock:
+            self._ensure_open()
+            rows = self._connection.execute(
+                "SELECT * FROM task_runs ORDER BY run_id"
+            ).fetchall()
+            return tuple(self._task_result_from_row(row) for row in rows)
+
+    @staticmethod
+    def _task_result_from_row(row: sqlite3.Row) -> TaskResult:
+        from .tasks import TaskResult
+
+        try:
+            errors = json.loads(row["errors_json"])
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise StorageError("persisted task error collection is malformed") from exc
+        if not isinstance(errors, list) or not all(isinstance(item, str) for item in errors):
+            raise StorageError("persisted task error collection is malformed")
+        return TaskResult(
+            run_id=row["run_id"],
+            task_id=row["task_id"],
+            actor_id=row["actor_id"],
+            tenant_id=row["tenant_id"],
+            resource_id=row["resource_id"],
+            environment=row["environment"],
+            target_extension_id=row["target_extension_id"],
+            target_extension_version=row["target_extension_version"],
+            outcome=row["outcome"],
+            valid=bool(row["valid"]),
+            errors=tuple(errors),
+            input_digest=row["input_digest"],
+            output_digest=row["output_digest"],
+            started_at=_timestamp_from_db(row["started_at"]),
+            completed_at=_timestamp_from_db(row["completed_at"]),
+            duration_ms=float(row["duration_ms"]),
+        )
+
+    def get_task_run(self, run_id: str) -> tuple[str, TaskResult] | None:
+        """Look up a run and its canonical request digest."""
+        with self._lock:
+            self._ensure_open()
+            row = self._connection.execute(
+                "SELECT * FROM task_runs WHERE run_id=?",
+                (run_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return row["request_digest"], self._task_result_from_row(row)
+
+    def save_task_run(self, request_digest: str, result: TaskResult) -> TaskResult:
+        """Persist a completed result or return an identical run's first result."""
+        if not isinstance(request_digest, str) or not request_digest.strip():
+            raise ValueError("request_digest is required")
+        if not isinstance(result.run_id, str) or not result.run_id.strip():
+            raise ValueError("result.run_id is required")
+        errors_json = json.dumps(
+            list(result.errors),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        with self._transaction() as connection:
+            existing = connection.execute(
+                "SELECT * FROM task_runs WHERE run_id=?",
+                (result.run_id,),
+            ).fetchone()
+            if existing is not None:
+                from .tasks import TaskRunConflictError
+
+                if existing["request_digest"] != request_digest:
+                    raise TaskRunConflictError(result.run_id)
+                return self._task_result_from_row(existing)
+
+            connection.execute(
+                """
+                INSERT INTO task_runs (
+                    run_id, request_digest, task_id, actor_id, tenant_id,
+                    resource_id, environment, target_extension_id,
+                    target_extension_version, outcome, valid, errors_json,
+                    input_digest, output_digest, started_at, completed_at,
+                    duration_ms
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    result.run_id,
+                    request_digest,
+                    result.task_id,
+                    result.actor_id,
+                    result.tenant_id,
+                    result.resource_id,
+                    result.environment,
+                    result.target_extension_id,
+                    result.target_extension_version,
+                    result.outcome,
+                    1 if result.valid else 0,
+                    errors_json,
+                    result.input_digest,
+                    result.output_digest,
+                    _timestamp_to_db(result.started_at),
+                    _timestamp_to_db(result.completed_at),
+                    result.duration_ms,
+                ),
+            )
+        return result
+
     def close(self) -> None:
         with self._lock:
             if not self._closed:
@@ -295,6 +402,8 @@ class SQLiteStore:
                         self._migration_1(connection)
                     elif next_version == 2:
                         self._migration_2(connection)
+                    elif next_version == 3:
+                        self._migration_3(connection)
                     else:
                         raise SchemaVersionError(
                             f"No migration path is defined to schema version {next_version}."
@@ -422,6 +531,39 @@ class SQLiteStore:
         )
         connection.execute(
             "CREATE INDEX idx_operation_audit_correlation ON operation_audit_events(correlation_id, event_id)"
+        )
+
+    @staticmethod
+    def _migration_3(connection: sqlite3.Connection) -> None:
+        """Persist deterministic task results and run-ID request fingerprints."""
+        connection.execute(
+            """
+            CREATE TABLE task_runs (
+                run_id TEXT PRIMARY KEY,
+                request_digest TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                actor_id TEXT NOT NULL,
+                tenant_id TEXT NOT NULL,
+                resource_id TEXT NOT NULL,
+                environment TEXT NOT NULL,
+                target_extension_id TEXT,
+                target_extension_version TEXT,
+                outcome TEXT NOT NULL,
+                valid INTEGER NOT NULL CHECK (valid IN (0, 1)),
+                errors_json TEXT NOT NULL,
+                input_digest TEXT NOT NULL,
+                output_digest TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                completed_at TEXT NOT NULL,
+                duration_ms REAL NOT NULL CHECK (duration_ms >= 0)
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX idx_task_runs_tenant_time ON task_runs(tenant_id, completed_at, run_id)"
+        )
+        connection.execute(
+            "CREATE INDEX idx_task_runs_target ON task_runs(target_extension_id, target_extension_version)"
         )
 
     def _ensure_open(self) -> None:
