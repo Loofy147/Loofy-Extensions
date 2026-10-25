@@ -124,7 +124,56 @@ class SQLitePersistenceTests(unittest.TestCase):
         self.assertEqual(self.registry.audit_events, prior_events)
 
     def test_grant_and_audit_survive_restart_and_revocation_is_durable(self) -> None:
-        key = self.record.key
+        record = self.registry.transition(
+            self.record.key.extension_id,
+            self.record.key.version,
+            ExtensionState.EVALUATING,
+            actor="reviewer",
+            reason="begin grant test review",
+            occurred_at=FIXED_NOW,
+        )
+        record = self.registry.transition(
+            record.key.extension_id,
+            record.key.version,
+            ExtensionState.APPROVED,
+            actor="reviewer",
+            reason="approve grant test extension",
+            approval_ref="review:sqlite-grant-test",
+            occurred_at=FIXED_NOW + timedelta(seconds=1),
+        )
+        record = self.registry.transition(
+            record.key.extension_id,
+            record.key.version,
+            ExtensionState.INSTALLED,
+            actor="operator",
+            reason="install reference record",
+            occurred_at=FIXED_NOW + timedelta(seconds=2),
+        )
+        record = self.registry.transition(
+            record.key.extension_id,
+            record.key.version,
+            ExtensionState.CONFIGURED,
+            actor="operator",
+            reason="configure reference record",
+            occurred_at=FIXED_NOW + timedelta(seconds=3),
+        )
+        record = self.registry.transition(
+            record.key.extension_id,
+            record.key.version,
+            ExtensionState.VALIDATED,
+            actor="operator",
+            reason="validate reference record",
+            occurred_at=FIXED_NOW + timedelta(seconds=4),
+        )
+        record = self.registry.transition(
+            record.key.extension_id,
+            record.key.version,
+            ExtensionState.ENABLED,
+            actor="owner:reviewer",
+            reason="enable for grant persistence test",
+            occurred_at=FIXED_NOW + timedelta(seconds=5),
+        )
+        key = record.key
         authority = GrantAuthority(
             self.store,
             record_loader=lambda requested_key: self.registry.get(
