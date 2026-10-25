@@ -36,7 +36,10 @@ Exit gate: the reference contract is testable without external credentials or wr
 - [x] Add a host-side metadata operation gateway that authorizes before outbound reads, fails closed on unavailable policy state, and emits decision/outcome events.
 - [ ] Wire caller context and policy loaders to the actual host authentication, current grant store, and extension registry.
 - [ ] Replace the in-memory audit sink with durable, access-controlled operation audit storage.
-- [ ] Define grant issuance, authorization of grant issuers, revocation, and tenant membership verification.
+- [x] Add an in-memory grant issuance/revocation reference with injected tenant-membership and grant-scope checks, future-expiry validation, immutable IDs, and audit events.
+- [x] Test grant issuance denial paths, issuer membership, high-impact approval presence, revocation, repeated revocation, and immutable grant identity.
+- [ ] Wire membership and grant-scope callbacks to authoritative host identity and policy services.
+- [ ] Replace process-local grant/revocation state and grant audit events with transactional durable storage.
 - [ ] Demonstrate disable/revoke behavior without external writes.
 
 Exit gate: read-only operation is authorized, attributable, testable, and revocable. The provider and in-memory gateway are reference seams, not a production-ready authorization or audit service.
