@@ -1,4 +1,4 @@
-"""An in-memory registry reference implementation; no external code is executed."""
+"""Validated registry with optional durable storage; no external code is executed."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 from threading import RLock
-from typing import Any, Mapping
+from typing import Any, Mapping, Protocol
 
 from .lifecycle import transition_record
 from .models import AuditEvent, ExtensionKey, ExtensionRecord, ExtensionState
@@ -22,22 +22,58 @@ class DuplicateExtensionVersionError(ValueError):
     """Raised when a publisher attempts to replace an existing version in place."""
 
 
-class ExtensionRegistry:
-    """Thread-safe, process-local registry useful for tests and design validation.
+class RegistryStore(Protocol):
+    """Persistence contract consumed by the registry facade."""
 
-    This deliberately has no durable persistence, plugin loader, network access,
-    credential store, or execution capability. A production adapter must add
-    those concerns as separate components rather than expanding this class.
+    @property
+    def lifecycle_events(self) -> tuple[AuditEvent, ...]: ...
+
+    def register_extension(self, record: ExtensionRecord) -> ExtensionRecord: ...
+
+    def get_extension(self, extension_id: str, version: str) -> ExtensionRecord: ...
+
+    def list_extensions(
+        self, *, state: ExtensionState | None = None
+    ) -> tuple[ExtensionRecord, ...]: ...
+
+    def transition_extension(
+        self,
+        extension_id: str,
+        version: str,
+        target: ExtensionState,
+        *,
+        actor: str,
+        reason: str,
+        approval_ref: str | None = None,
+        occurred_at: datetime | None = None,
+    ) -> ExtensionRecord: ...
+
+
+class ExtensionRegistry:
+    """Schema-backed registry facade with optional process-local or durable state.
+
+    Without a store, behavior remains process-local and thread-safe for tests.
+    When given a store implementing RegistryStore, persisted records and
+    lifecycle transitions are read/written there; durable implementations should
+    atomically commit state changes with their audit event.
     """
 
-    def __init__(self, schema_path: Path = DEFAULT_SCHEMA) -> None:
+    def __init__(
+        self,
+        schema_path: Path = DEFAULT_SCHEMA,
+        *,
+        store: RegistryStore | None = None,
+    ) -> None:
         self._schema = load_schema(schema_path)
+        self._store = store
         self._records: dict[ExtensionKey, ExtensionRecord] = {}
         self._audit_events: list[AuditEvent] = []
         self._lock = RLock()
 
     @property
     def audit_events(self) -> tuple[AuditEvent, ...]:
+        if self._store is not None:
+            return self._store.lifecycle_events
         with self._lock:
             return tuple(self._audit_events)
 
@@ -77,6 +113,17 @@ class ExtensionRegistry:
             required_capabilities=frozenset(document["capabilities"]["requires"]),
         )
 
+        if self._store is not None:
+            # Import lazily to avoid coupling the facade to a concrete adapter.
+            try:
+                return self._store.register_extension(record)
+            except Exception as exc:
+                from .persistence import ImmutableVersionConflictError
+
+                if isinstance(exc, ImmutableVersionConflictError):
+                    raise DuplicateExtensionVersionError(str(exc)) from exc
+                raise
+
         with self._lock:
             existing = self._records.get(key)
             if existing:
@@ -89,6 +136,8 @@ class ExtensionRegistry:
             return record
 
     def get(self, extension_id: str, version: str) -> ExtensionRecord:
+        if self._store is not None:
+            return self._store.get_extension(extension_id, version)
         with self._lock:
             return self._records[ExtensionKey(extension_id, version)]
 
@@ -97,6 +146,8 @@ class ExtensionRegistry:
         *,
         state: ExtensionState | None = None,
     ) -> tuple[ExtensionRecord, ...]:
+        if self._store is not None:
+            return self._store.list_extensions(state=state)
         with self._lock:
             records = sorted(self._records.values(), key=lambda item: item.key)
             if state is not None:
@@ -114,12 +165,18 @@ class ExtensionRegistry:
         approval_ref: str | None = None,
         occurred_at: datetime | None = None,
     ) -> ExtensionRecord:
-        """Apply one allowed transition and append an immutable audit event.
+        """Apply an allowed transition and append its audit event."""
+        if self._store is not None:
+            return self._store.transition_extension(
+                extension_id,
+                version,
+                target,
+                actor=actor,
+                reason=reason,
+                approval_ref=approval_ref,
+                occurred_at=occurred_at,
+            )
 
-        `occurred_at` is optional so tests and controlled callers can supply a
-        deterministic timestamp. Production callers should normally omit it so
-        the UTC clock is captured by the lifecycle function.
-        """
         key = ExtensionKey(extension_id, version)
         with self._lock:
             try:
