@@ -110,7 +110,12 @@ class SQLiteStore:
         if database_name != ":memory:":
             self._connection.execute("PRAGMA journal_mode = WAL")
         self._connection.execute("PRAGMA synchronous = FULL")
-        self._initialize_schema()
+        try:
+            self._initialize_schema()
+        except BaseException:
+            self._connection.close()
+            self._closed = True
+            raise
 
     @property
     def schema_version(self) -> int:
@@ -187,7 +192,23 @@ class SQLiteStore:
             if version == CURRENT_SCHEMA_VERSION:
                 return
 
+            # Re-read under the write transaction so simultaneous constructors
+            # cannot both apply the same migration after observing version zero.
             with self._transaction() as connection:
+                locked_row = connection.execute(
+                    "SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations"
+                ).fetchone()
+                locked_version = int(locked_row["version"])
+                if locked_version > CURRENT_SCHEMA_VERSION:
+                    raise SchemaVersionError(
+                        f"Database schema version {locked_version} is newer than supported version {CURRENT_SCHEMA_VERSION}."
+                    )
+                if locked_version == CURRENT_SCHEMA_VERSION:
+                    return
+                if locked_version != 0:
+                    raise SchemaVersionError(
+                        f"No migration path is defined from schema version {locked_version}."
+                    )
                 self._migration_1(connection)
                 connection.execute(
                     "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
