@@ -30,7 +30,7 @@ A valid manifest does **not** grant permissions. Registering an extension does *
 | Declarative extension | Metadata, rules, and configuration with no arbitrary code execution |
 | Sandboxed artifact | Selected third-party executable workload behind isolation and review |
 
-See [extension type taxonomy](docs/architecture/extension-types.md) and [reference architecture](docs/architecture/reference-architecture.md).
+See [extension type taxonomy](docs/architecture/extension-types.md), [reference architecture](docs/architecture/reference-architecture.md), and [Phase 1 contract review](docs/architecture/phase-1-contract-review.md).
 
 ## Validate locally
 
@@ -51,6 +51,7 @@ The `loofy_extensions` package currently offers an in-memory reference implement
 ## Documentation
 
 - Architecture: [reference architecture](docs/architecture/reference-architecture.md)
+- Phase 1 review: [lifecycle, authorization, and provenance contracts](docs/architecture/phase-1-contract-review.md)
 - Reference code boundaries: [reference implementation](docs/architecture/reference-implementation.md)
 - Extension type taxonomy: [extension types](docs/architecture/extension-types.md)
 - Architecture decision: [ADR 0001 — Extension Boundaries](docs/architecture/decisions/0001-extension-boundaries.md)
