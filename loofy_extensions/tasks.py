@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import subprocess
 import sys
@@ -163,6 +164,7 @@ class TaskRunner:
         if (
             isinstance(worker_timeout_seconds, bool)
             or not isinstance(worker_timeout_seconds, (int, float))
+            or not math.isfinite(worker_timeout_seconds)
             or worker_timeout_seconds <= 0
         ):
             raise ValueError("worker_timeout_seconds must be a positive number")
