@@ -168,6 +168,9 @@ class TaskRunner:
                 f"Manifest input exceeds the {self._max_input_bytes}-byte limit.",
             )
 
+        # Validate the exact immutable-by-copy snapshot whose bytes are hashed;
+        # do not re-read a caller-owned mutable mapping after computing its digest.
+        normalized_manifest = json.loads(manifest_bytes.decode("utf-8"))
         request_document = {
             "run_id": run_id,
             "task_id": task_id,
@@ -175,7 +178,7 @@ class TaskRunner:
             "tenant_id": tenant_id,
             "resource_id": resource_id,
             "environment": environment,
-            "manifest": dict(envelope.manifest),
+            "manifest": normalized_manifest,
         }
         request_bytes = _canonical_json(request_document)
         request_digest = "sha256:" + hashlib.sha256(request_bytes).hexdigest()
@@ -192,14 +195,14 @@ class TaskRunner:
 
             started_at = _aware_utc(self._clock(), "clock")
             start_tick = self._monotonic()
-            errors = tuple(validate_manifest_data(dict(envelope.manifest), self._schema))
+            errors = tuple(validate_manifest_data(normalized_manifest, self._schema))
             valid = not errors
             output_bytes = _canonical_json({"valid": valid, "errors": errors})
             output_digest = "sha256:" + hashlib.sha256(output_bytes).hexdigest()
             completed_at = _aware_utc(self._clock(), "clock")
             elapsed = max(0.0, self._monotonic() - start_tick)
 
-            metadata = envelope.manifest.get("metadata")
+            metadata = normalized_manifest.get("metadata")
             metadata = metadata if isinstance(metadata, Mapping) else {}
             extension_id = metadata.get("id")
             version = metadata.get("version")
