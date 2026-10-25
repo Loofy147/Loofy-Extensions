@@ -49,7 +49,7 @@ with SQLiteStore("var/loofy-extensions.sqlite3") as store:
     result = authorized_runner.run(envelope, caller=caller_context)
 ~~~
 
-The task extension record must be enabled and request the capability `task.manifest.validate`. Grant creation still goes through `GrantAuthority` with host-verified tenant membership and grant-scope authority. Record/grant loaders must be current and authoritative; this adapter does not authenticate callers or issue grants.
+The canonical host-owned contract is `examples/extensions/task-runner/extension.json`. Register it through the normal registry API and transition its record through the lifecycle to `enabled` before authorizing tasks. The record must request the capability `task.manifest.validate`. Grant creation still goes through `GrantAuthority` with host-verified tenant membership and grant-scope authority. Record/grant loaders must be current and authoritative; this adapter does not authenticate callers or issue grants.
 
 ## Boundaries still outstanding
 

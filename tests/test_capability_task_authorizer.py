@@ -32,22 +32,8 @@ RESOURCE_ID = "extension-candidate:sample"
 
 
 def task_runner_manifest() -> dict[str, object]:
-    path = next(DEFAULT_EXAMPLES.rglob("extension.json"))
-    document = json.loads(path.read_text(encoding="utf-8"))
-    # This test declares the built-in, host-owned task runner record. It does not
-    # load the manifest's entrypoint; the actual code path is still the allowlist.
-    document["metadata"]["id"] = TASK_EXTENSION_ID
-    document["metadata"]["name"] = "Built-in Manifest Validation Task Runner"
-    document["metadata"]["version"] = TASK_EXTENSION_VERSION
-    document["metadata"]["description"] = (
-        "Host-owned manifest validation task; registration does not execute code."
-    )
-    document["runtime"]["entrypoint"] = "loofy_extensions.task_gateway:AuthorizedTaskRunner"
-    document["permissions"]["requested"] = [TASK_CAPABILITY]
-    document["capabilities"]["requires"] = [TASK_CAPABILITY]
-    document["capabilities"]["provides"] = ["manifest.validate"]
-    return document
-
+    path = DEFAULT_EXAMPLES / "task-runner" / "extension.json"
+    return json.loads(path.read_text(encoding="utf-8"))
 
 def task_envelope(run_id: str) -> ExecutionEnvelope:
     return ExecutionEnvelope(
@@ -58,7 +44,7 @@ def task_envelope(run_id: str) -> ExecutionEnvelope:
         resource_id=RESOURCE_ID,
         environment="untrusted-environment",
         manifest=json.loads(
-            next(DEFAULT_EXAMPLES.rglob("extension.json")).read_text(encoding="utf-8")
+            (DEFAULT_EXAMPLES / "manifest-validator" / "extension.json").read_text(encoding="utf-8")
         ),
     )
 

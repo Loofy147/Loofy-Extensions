@@ -58,7 +58,7 @@ def metadata_payload() -> dict[str, object]:
 
 def enabled_metadata_record(registry: ExtensionRegistry):
     manifest = json.loads(
-        next(DEFAULT_EXAMPLES.rglob("extension.json")).read_text(encoding="utf-8")
+        (DEFAULT_EXAMPLES / "manifest-validator" / "extension.json").read_text(encoding="utf-8")
     )
     manifest["permissions"]["requested"] = [CAPABILITY_REPOSITORY_METADATA_READ]
     manifest["capabilities"]["requires"] = [CAPABILITY_REPOSITORY_METADATA_READ]

@@ -20,6 +20,7 @@ A governed foundation for discovering, describing, validating, and eventually ex
 - An allowlisted `manifest.validate` task runner with typed execution envelopes, input-size limits, content digests, attribution, run-ID idempotency, and no third-party code execution.
 - Optional isolated subprocess validation with a wall-clock deadline, POSIX CPU/address-space/core-file limits, and bounded JSON request/response messages.
 - An optional task authorization wrapper that derives attribution from trusted host caller context and fails closed when policy lookup or the pre-run audit append fails.
+- A canonical host-owned task-runner manifest at `examples/extensions/task-runner/extension.json`, declaring `task.manifest.validate` and a deny-by-default network policy.
 - A capability-policy adapter that maps the allowlisted `manifest.validate` task to `task.manifest.validate` and evaluates it using the existing tenant-scoped grant policy.
 - Optional SQLite-backed task results with persisted request fingerprints, so identical run IDs remain idempotent across restarts and conflicting reuse is rejected.
 

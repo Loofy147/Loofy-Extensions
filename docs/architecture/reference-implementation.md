@@ -16,6 +16,7 @@ The `loofy_extensions` package makes architecture decisions executable and testa
 - `providers/github_metadata.py` and `providers/github_gateway.py`: read-only GitHub metadata normalization and a host-side authorization/audit seam.
 - `tasks.py` and `validation_worker.py`: allowlisted `manifest.validate` task, with default in-process validation and an opt-in subprocess worker with wall-clock/size bounds plus POSIX CPU/address-space/core limits. No third-party code execution. Task results can be held in memory or persisted through the SQLite store.
 - `task_gateway.py`: host-side `AuthorizedTaskRunner` wrapper plus `CapabilityTaskAuthorizer`; replaces envelope attribution with trusted caller context, maps `manifest.validate` to `task.manifest.validate`, evaluates existing tenant-scoped grants, and emits correlated audit events before/after the task.
+- `examples/extensions/task-runner/extension.json`: canonical schema-validated manifest for the built-in task runner, with the task capability declared and network access denied by default.
 
 ## Quick in-memory example
 
@@ -26,7 +27,7 @@ from loofy_extensions import ExtensionRegistry
 from loofy_extensions.validation import DEFAULT_EXAMPLES
 
 registry = ExtensionRegistry()
-manifest_path = next(DEFAULT_EXAMPLES.rglob("extension.json"))
+manifest_path = DEFAULT_EXAMPLES / "manifest-validator" / "extension.json"
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 record = registry.register(manifest)
 print(record.key, record.state.value, record.manifest_digest)
