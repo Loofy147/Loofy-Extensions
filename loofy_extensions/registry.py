@@ -11,6 +11,7 @@ from typing import Any, Mapping, Protocol
 
 from .lifecycle import transition_record
 from .models import AuditEvent, ExtensionKey, ExtensionRecord, ExtensionState
+from .persistence import ImmutableVersionConflictError
 from .validation import DEFAULT_SCHEMA, load_schema, validate_manifest_data
 
 
@@ -114,15 +115,10 @@ class ExtensionRegistry:
         )
 
         if self._store is not None:
-            # Import lazily to avoid coupling the facade to a concrete adapter.
             try:
                 return self._store.register_extension(record)
-            except Exception as exc:
-                from .persistence import ImmutableVersionConflictError
-
-                if isinstance(exc, ImmutableVersionConflictError):
-                    raise DuplicateExtensionVersionError(str(exc)) from exc
-                raise
+            except ImmutableVersionConflictError as exc:
+                raise DuplicateExtensionVersionError(str(exc)) from exc
 
         with self._lock:
             existing = self._records.get(key)
