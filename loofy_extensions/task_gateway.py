@@ -162,7 +162,8 @@ class AuthorizedTaskRunner:
                 correlation_id=run_id,
             )
             raise TaskAuthorizationContextUnavailable(
-                "Trusted task authorization is unavailable; task request denied."
+                "authorization-context-unavailable",
+                "Trusted task authorization is unavailable; task request denied.",
             ) from None
 
         if (
@@ -185,7 +186,8 @@ class AuthorizedTaskRunner:
                 correlation_id=run_id,
             )
             raise TaskAuthorizationContextUnavailable(
-                "Task authorization did not return a valid decision; task request denied."
+                "invalid-authorization-decision",
+                "Task authorization did not return a valid decision; task request denied.",
             )
 
         if not decision.allowed:
