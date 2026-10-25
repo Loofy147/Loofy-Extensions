@@ -2,7 +2,7 @@
 
 A governed foundation for discovering, describing, validating, and eventually executing extensions across developer tools and connected services.
 
-> **Current status:** versioned manifests, an optional transactional SQLite registry/grant store, tenant-scoped grant lifecycle, a read-only GitHub repository metadata provider, a host-side authorization gateway, durable operation-audit storage with correlation IDs, and an allowlisted manifest-validation task runner. These are reference implementations, not a production plugin runtime. Production identity/approval verification, hardened audit access controls, secret storage, isolated workers, and sandboxed third-party execution remain out of scope.
+> **Current status:** versioned manifests, an optional transactional SQLite registry/grant store, tenant-scoped grant lifecycle, a read-only GitHub repository metadata provider, a host-side authorization gateway, durable operation-audit storage, an allowlisted manifest-validation task runner, and optional durable task results. These are reference implementations, not a production plugin runtime. Production identity/approval verification, hardened audit access controls, secret storage, isolated workers, and sandboxed third-party execution remain out of scope.
 
 ## What this repository establishes
 
@@ -14,10 +14,10 @@ A governed foundation for discovering, describing, validating, and eventually ex
 - A read-only GitHub repository metadata provider behind a host-owned transport contract.
 - A host-side gateway that authorizes and audits metadata reads before calling the provider.
 - A grant authority with injectable tenant-membership and grant-scope checks, expiry validation, immutable grant IDs, revocation state, and grant lifecycle audit events.
-- A transactional SQLite store for extension records, lifecycle events, grants, grant events, and operation-level gateway audit records. State changes and their corresponding lifecycle/grant audit rows are committed atomically.
-- Correlation IDs that link an authorized metadata read to its completion or provider-failure event.
-- An allowlisted manifest.validate task runner with typed execution envelopes, input-size limits, content digests, attribution, idempotent run IDs, and no third-party code execution.
-- Architecture, trust boundaries, threat model, contribution/security guidance, migration requirements, and an implementation roadmap.
+- A transactional SQLite store for extension records, lifecycle events, grants, grant events, operation-level gateway audit records, and optional task-run results. Lifecycle/grant state changes and their corresponding audit rows are committed atomically.
+- Correlation IDs that link a metadata read's authorization and outcome events.
+- An allowlisted `manifest.validate` task runner with typed execution envelopes, input-size limits, content digests, attribution, run-ID idempotency, and no third-party code execution.
+- Optional SQLite-backed task results with persisted request fingerprints, so identical run IDs remain idempotent across restarts and conflicting reuse is rejected.
 
 ## Important security boundary
 
@@ -53,18 +53,22 @@ The GitHub Actions workflow runs the same checks for pull requests and pushes to
 ## Use SQLite persistence locally
 
 ~~~python
-from loofy_extensions import ExtensionRegistry, SQLiteStore
+from loofy_extensions import ExtensionRegistry, SQLiteStore, TaskRunner
 
 with SQLiteStore("var/loofy-extensions.sqlite3") as store:
     registry = ExtensionRegistry(store=store)
     record = registry.register(manifest)
+
+    # The same store persists task results and request fingerprints.
+    runner = TaskRunner(store=store)
+    result = runner.run(envelope)
 ~~~
 
-The same store can be passed as the grant store to GrantAuthority and as the operation audit sink to AuthorizedGitHubMetadataReader. The operation audit stream stores principal, tenant, resource, outcome, decision, UTC timestamp, source ID when available, and a correlation ID. See [SQLite persistence](docs/architecture/sqlite-persistence.md) for migration and transaction guarantees.
+The same store can be passed as the grant store to `GrantAuthority` and as the operation audit sink to `AuthorizedGitHubMetadataReader`. The operation audit stream stores principal, tenant, resource, outcome, decision, UTC timestamp, source ID when available, and a correlation ID. See [SQLite persistence](docs/architecture/sqlite-persistence.md) for migration and transaction guarantees.
 
 ## Package core
 
-The package offers both the original in-memory reference registry and an optional local SQLite store. The GitHub metadata provider is read-only and does not acquire credentials. The gateway and grant authority require trusted host callbacks; persistence does not authenticate a caller or verify approval evidence. The built-in task runner loads no third-party code and is input-bounded, but it is not an isolated worker and its run history is not yet durable.
+The package offers both the original in-memory reference registry and an optional local SQLite store. The GitHub metadata provider is read-only and does not acquire credentials. The gateway and grant authority require trusted host callbacks; persistence does not authenticate a caller or verify approval evidence. The built-in task runner loads no third-party code and is input-bounded, but it is not an isolated worker and provides no hard timeout/CPU/memory enforcement.
 
 ## Documentation
 
