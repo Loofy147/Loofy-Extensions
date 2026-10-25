@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import stat
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -51,6 +53,28 @@ class SQLitePersistenceTests(unittest.TestCase):
     def test_schema_migration_and_integrity_check(self) -> None:
         self.assertEqual(self.store.schema_version, CURRENT_SCHEMA_VERSION)
         self.assertEqual(self.store.integrity_check(), ("ok",))
+
+    @unittest.skipUnless(os.name == "posix", "POSIX file permissions are not portable")
+    def test_database_and_active_sidecars_are_owner_only(self) -> None:
+        self.assertEqual(stat.S_IMODE(self.database_path.stat().st_mode), 0o600)
+        candidates = (
+            self.database_path,
+            Path(f"{self.database_path}-wal"),
+            Path(f"{self.database_path}-shm"),
+        )
+        for candidate in candidates:
+            if candidate.exists():
+                with self.subTest(path=candidate.name):
+                    mode = stat.S_IMODE(candidate.stat().st_mode)
+                    self.assertEqual(mode & 0o077, 0)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX file permissions are not portable")
+    def test_existing_database_permissions_are_tightened_on_open(self) -> None:
+        self.store.close()
+        os.chmod(self.database_path, 0o644)
+        reopened_store = SQLiteStore(self.database_path)
+        self.store = reopened_store
+        self.assertEqual(stat.S_IMODE(self.database_path.stat().st_mode), 0o600)
 
     def test_v1_schema_migrates_through_all_current_versions(self) -> None:
         self.store.close()

@@ -8,6 +8,12 @@ Status: local durable reference adapter. It persists extension state, grants, li
 
 No third-party runtime dependency is required; the adapter uses Python's standard-library `sqlite3`.
 
+## File permission handling
+
+On POSIX hosts, the adapter creates a new database file with owner-only permissions (`0600`) before opening it and tightens an existing database file to `0600` before reading it. After WAL mode and schema initialization, the adapter also restricts any active WAL and shared-memory sidecar files to owner-only permissions. If the main database or sidecars are not regular files, initialization fails closed.
+
+This reduces accidental local disclosure of tenant IDs, grants, authorization decisions, and audit metadata to other local users. It is not encryption at rest and does not replace directory permissions, OS account separation, secret management, or backup controls. The package applies these POSIX mode guarantees only on POSIX hosts; other platforms need an appropriate filesystem ACL policy.
+
 ## Schema migration
 
 The database records applied versions in `schema_migrations`. Migrations are forward-only and applied under a write transaction. A database whose recorded version is newer than the code is rejected rather than silently rewritten.
@@ -59,14 +65,14 @@ Use the same live store instance for registry operations, grant issuance/revocat
 
 - Suitable as an embedded/local reference and single-host starting point; no multi-node coordination or high-availability guarantee is claimed.
 - Caller identity, tenant membership, grantor authority, and approval verification must come from trusted host services.
-- Operation events are persisted, but access controls, tamper-evidence, retention, backup/restore, encryption-at-rest policy and production monitoring still need to be defined.
+- Operation events are persisted, but access controls, tamper-evidence, retention, backup/restore, and production monitoring still need to be defined.
 - Grant and lifecycle event transaction guarantees apply within this database. Sending events to an external audit system requires an outbox or another explicit consistency design.
 - Task execution results are stored only after task completion; this is not a queue, crash-recovery lease, or exactly-once execution engine. Current validation is pure/read-only, so retry is safe.
 - This adapter does not store secrets, GitHub tokens, provider payloads, or task input manifests. It retains request fingerprints, result metadata, and validation error strings.
 
 ## Verification
 
-`tests/test_sqlite_persistence.py` covers v1→v3 and v2→v3 migrations, restart, lifecycle/grant/operation audit persistence, durable task results, immutable version/grant conflicts, future-schema rejection, and transactional rollback under forced audit failures. Task-runner tests cover cross-restart replay and conflicting run-ID reuse.
+`tests/test_sqlite_persistence.py` covers owner-only permissions on POSIX, v1→v3 and v2→v3 migrations, restart, lifecycle/grant/operation audit persistence, durable task results, immutable version/grant conflicts, future-schema rejection, and transactional rollback under forced audit failures. Task-runner tests cover cross-restart replay and conflicting run-ID reuse.
 
 ~~~sh
 python -m unittest discover --start-directory tests --verbose

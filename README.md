@@ -15,6 +15,7 @@ A governed foundation for discovering, describing, validating, and eventually ex
 - A host-side gateway that authorizes and audits metadata reads before calling the provider.
 - A grant authority with injectable tenant-membership and grant-scope checks, expiry validation, immutable grant IDs, revocation state, and grant lifecycle audit events.
 - A transactional SQLite store for extension records, lifecycle events, grants, grant events, operation-level gateway audit records, and optional task-run results.
+- Owner-only SQLite database/WAL/SHM permissions on POSIX hosts.
 - Correlation IDs that link metadata/task authorization and outcome events.
 - An allowlisted `manifest.validate` task runner with typed execution envelopes, input-size limits, content digests, attribution, run-ID idempotency, and no third-party code execution.
 - An optional task authorization wrapper that derives attribution from trusted host caller context and fails closed when policy lookup or the pre-run audit append fails.
@@ -68,7 +69,7 @@ The same store can be passed as the grant store to `GrantAuthority` and as the o
 
 ## Package core
 
-The package offers both the original in-memory reference registry and an optional local SQLite store. The GitHub metadata provider is read-only and does not acquire credentials. The gateway and grant/task authorization wrappers require trusted host callbacks; persistence does not authenticate a caller or verify approval evidence. The built-in task runner loads no third-party code and is input-bounded, but it is not an isolated worker and provides no hard timeout/CPU/memory enforcement. Applications exposed to users should use `AuthorizedTaskRunner` or an equivalent operation boundary rather than exposing the bare task runner.
+The package offers both the original in-memory reference registry and an optional local SQLite store. The GitHub metadata provider is read-only and does not acquire credentials. The gateway and grant/task authorization wrappers require trusted host callbacks; persistence does not authenticate a caller or verify approval evidence. On POSIX hosts, SQLite database and active sidecar files are restricted to owner-only permissions; this is not encryption at rest or a substitute for backup and directory access policy. The built-in task runner loads no third-party code and is input-bounded, but it is not an isolated worker and provides no hard timeout/CPU/memory enforcement. Applications exposed to users should use `AuthorizedTaskRunner` or an equivalent operation boundary rather than exposing the bare task runner.
 
 ## Documentation
 
