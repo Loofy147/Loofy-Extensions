@@ -15,6 +15,7 @@ The `loofy_extensions` package makes architecture decisions executable and testa
 - `persistence.py`: versioned SQLite schema v3 for extension records, lifecycle events, grants, grant events, gateway operation audit events, and optional task-run results. State and paired lifecycle/grant audit events are committed atomically; task results and their request fingerprints are persisted transactionally.
 - `providers/github_metadata.py` and `providers/github_gateway.py`: read-only GitHub metadata normalization and a host-side authorization/audit seam.
 - `tasks.py`: allowlisted, input-bounded `manifest.validate` task; no third-party code execution. Task results can be held in memory or persisted through the SQLite store.
+- `task_gateway.py`: host-side `AuthorizedTaskRunner` wrapper; replaces envelope attribution with trusted caller context, invokes an injected authorizer, and emits correlated audit events before/after the task.
 
 ## Quick in-memory example
 
@@ -43,7 +44,7 @@ with SQLiteStore("var/loofy-extensions.sqlite3") as store:
     result = runner.run(envelope)
 ~~~
 
-Use the same `SQLiteStore` instance for registry operations, grant authority, gateway audit events, and durable task results when they need to share the same database. See [SQLite Persistence](sqlite-persistence.md) for migrations, restart behavior, guarantees and limitations.
+For user-facing execution, wrap the runner with `AuthorizedTaskRunner`, and supply a `TaskCallerContext` derived from trusted host authentication and a host-owned `TaskAuthorizer`. Use the same `SQLiteStore` instance for registry operations, grant authority, gateway audit events, and durable task results when they need to share the same database. See [SQLite Persistence](sqlite-persistence.md) and [Authorized Task Runner](authorized-task-runner.md).
 
 ## Run checks
 
@@ -60,6 +61,7 @@ python scripts/validate_manifests.py
 - The store does not authenticate the publisher or actor, mint credentials, receive webhooks, persist approval verification, or control an external API.
 - Grant membership, grant-scope authority and caller context must come from trusted host services. Approval references are pointers, not cryptographically verified evidence.
 - The task runner only exposes `manifest.validate`; it has no dynamic imports, hard preemptive timeout, OS-level resource limits, or worker isolation.
+- The authorization wrapper does not authenticate `TaskCallerContext` or supply policy; host applications must enforce this.
 - Schema-valid data is not proof of publisher authenticity, license compatibility, artifact safety or permission.
 - A capability decision must never be trusted by itself for a consequential production side effect. The receiving API/service must authorize the real actor, tenant, target resource and environment again.
 
@@ -68,6 +70,6 @@ python scripts/validate_manifests.py
 1. Keep registry validation and lifecycle rules independent of storage.
 2. Add new schema changes as ordered migrations and test upgrade, rollback and restart behavior.
 3. Bind approval evidence to the exact extension digest, principal, scope, action and expiry.
-4. Wire host identity and policy services to grant issuance/revocation and operation gateways.
-5. Replace in-memory host operation audit with the durable store and define access control, retention and tamper-evidence.
+4. Wire host identity and policy services to grant issuance/revocation, task authorization and operation gateways.
+5. Define access control, retention, backup and tamper-evidence for durable audit.
 6. Add isolation and recovery evidence before third-party code execution.
