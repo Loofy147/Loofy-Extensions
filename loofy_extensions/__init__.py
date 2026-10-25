@@ -19,6 +19,7 @@ from .tasks import (
     ExecutionEnvelope,
     TaskExecutionError,
     TaskResult,
+    TaskResultStore,
     TaskRunConflictError,
     TaskRunner,
 )
@@ -57,6 +58,7 @@ __all__ = [
     "StorageError",
     "TaskExecutionError",
     "TaskResult",
+    "TaskResultStore",
     "TaskRunConflictError",
     "TaskRunner",
     "authorize",

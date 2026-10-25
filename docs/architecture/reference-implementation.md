@@ -11,14 +11,14 @@ The `loofy_extensions` package makes architecture decisions executable and testa
 - `registry.py`: schema-backed registration, stable `(id, version)` identity, canonical manifest SHA-256, idempotent identical registration, and rejection of same-version content drift. An optional store can back registration and transitions.
 - `lifecycle.py`: explicit allowed transitions, actor/reason requirements, approval evidence for approval and high-impact enablement, and audit-event generation.
 - `policy.py`: exact-match, default-deny authorization for tenant, principal, extension version, capability, resource and environment; unexpired grants only; extra approval evidence for high-impact permissions.
-- `grants.py`: in-memory grant issuance/revocation reference with host-supplied membership and scope-authority callbacks.
-- `persistence.py`: versioned SQLite schema for extension records, lifecycle events, grants and grant events; state and corresponding audit events are committed atomically.
+- `grants.py`: grant issuance/revocation reference with host-supplied membership and scope-authority callbacks.
+- `persistence.py`: versioned SQLite schema v3 for extension records, lifecycle events, grants, grant events, gateway operation audit events, and optional task-run results. State and paired lifecycle/grant audit events are committed atomically; task results and their request fingerprints are persisted transactionally.
 - `providers/github_metadata.py` and `providers/github_gateway.py`: read-only GitHub metadata normalization and a host-side authorization/audit seam.
-- `tasks.py`: allowlisted, input-bounded `manifest.validate` task; no third-party code execution.
+- `tasks.py`: allowlisted, input-bounded `manifest.validate` task; no third-party code execution. Task results can be held in memory or persisted through the SQLite store.
 
 ## Quick in-memory example
 
-```python
+~~~python
 import json
 
 from loofy_extensions import ExtensionRegistry
@@ -29,35 +29,37 @@ manifest_path = next(DEFAULT_EXAMPLES.rglob("extension.json"))
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 record = registry.register(manifest)
 print(record.key, record.state.value, record.manifest_digest)
-```
+~~~
 
 ## Durable local example
 
-```python
-from loofy_extensions import ExtensionRegistry, SQLiteStore
+~~~python
+from loofy_extensions import ExtensionRegistry, SQLiteStore, TaskRunner
 
 with SQLiteStore("var/loofy-extensions.sqlite3") as store:
     registry = ExtensionRegistry(store=store)
     record = registry.register(manifest)
-```
+    runner = TaskRunner(store=store)
+    result = runner.run(envelope)
+~~~
 
-Use the same `SQLiteStore` instance for registry operations and the grant authority when lifecycle/grant records must share one database and transaction domain. See [SQLite Persistence](sqlite-persistence.md) for migrations, restart behavior, guarantees and limits.
+Use the same `SQLiteStore` instance for registry operations, grant authority, gateway audit events, and durable task results when they need to share the same database. See [SQLite Persistence](sqlite-persistence.md) for migrations, restart behavior, guarantees and limitations.
 
 ## Run checks
 
-```sh
+~~~sh
 python -m pip install -r requirements-dev.txt
 python -m unittest discover --start-directory tests --verbose
 python scripts/validate_manifests.py
-```
+~~~
 
 ## Deliberate limitations
 
-- Without a store, registry state and audit events live only in process memory.
+- Without a store, registry, grants, operation events, and task result history are process-local.
 - SQLite state survives a process restart, but the reference database remains a local single-host store, not a distributed/high-availability system.
 - The store does not authenticate the publisher or actor, mint credentials, receive webhooks, persist approval verification, or control an external API.
 - Grant membership, grant-scope authority and caller context must come from trusted host services. Approval references are pointers, not cryptographically verified evidence.
-- The gateway's operation audit sink and task-runner history are still in-memory.
+- The task runner only exposes `manifest.validate`; it has no dynamic imports, hard preemptive timeout, OS-level resource limits, or worker isolation.
 - Schema-valid data is not proof of publisher authenticity, license compatibility, artifact safety or permission.
 - A capability decision must never be trusted by itself for a consequential production side effect. The receiving API/service must authorize the real actor, tenant, target resource and environment again.
 
@@ -67,5 +69,5 @@ python scripts/validate_manifests.py
 2. Add new schema changes as ordered migrations and test upgrade, rollback and restart behavior.
 3. Bind approval evidence to the exact extension digest, principal, scope, action and expiry.
 4. Wire host identity and policy services to grant issuance/revocation and operation gateways.
-5. Replace in-memory operation audit and task history with a deliberate durable/auditable design.
+5. Replace in-memory host operation audit with the durable store and define access control, retention and tamper-evidence.
 6. Add isolation and recovery evidence before third-party code execution.

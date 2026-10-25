@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import copy
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
+from loofy_extensions import SQLiteStore
 from loofy_extensions.tasks import (
     ExecutionEnvelope,
     TaskExecutionError,
@@ -138,6 +141,60 @@ class TaskRunnerTests(unittest.TestCase):
         second = self.runner.run(envelope(run_id="run-b"))
         self.assertEqual(first.input_digest, second.input_digest)
         self.assertEqual(first.output_digest, second.output_digest)
+
+    def test_durable_result_survives_restart_and_run_id_conflicts_persist(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            database_path = Path(temporary_directory) / "task-runs.sqlite3"
+            store = SQLiteStore(database_path)
+            runner = TaskRunner(
+                store=store,
+                clock=lambda: datetime(2026, 10, 25, 4, 0, tzinfo=timezone.utc),
+                monotonic=lambda: 1.0,
+            )
+            request = envelope(run_id="durable-run-001")
+            try:
+                first = runner.run(request)
+                self.assertEqual(runner.history, (first,))
+                store.close()
+
+                reopened_store = SQLiteStore(database_path)
+                try:
+                    reopened_runner = TaskRunner(
+                        store=reopened_store,
+                        clock=lambda: datetime(2027, 10, 25, 4, 0, tzinfo=timezone.utc),
+                        monotonic=lambda: 10.0,
+                    )
+                    retried = reopened_runner.run(request)
+                    self.assertEqual(retried, first)
+                    self.assertEqual(reopened_runner.history, (first,))
+
+                    changed_manifest = sample_manifest()
+                    changed_manifest["metadata"]["description"] = "different payload after restart"
+                    with self.assertRaises(TaskRunConflictError) as context:
+                        reopened_runner.run(
+                            envelope(changed_manifest, run_id="durable-run-001")
+                        )
+                    self.assertEqual(context.exception.code, "run-id-conflict")
+                    self.assertEqual(reopened_runner.history, (first,))
+                finally:
+                    reopened_store.close()
+            finally:
+                store.close()
+
+    def test_invalid_manifest_result_is_persisted_as_completed_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            store = SQLiteStore(Path(temporary_directory) / "invalid-task.sqlite3")
+            try:
+                invalid = sample_manifest()
+                del invalid["metadata"]["license"]
+                runner = TaskRunner(store=store)
+                result = runner.run(envelope(invalid, run_id="invalid-run"))
+                self.assertFalse(result.valid)
+                self.assertEqual(result.outcome, "validation_failed")
+                self.assertTrue(result.errors)
+                self.assertEqual(runner.history, (result,))
+            finally:
+                store.close()
 
 
 if __name__ == "__main__":

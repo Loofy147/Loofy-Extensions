@@ -42,22 +42,22 @@ Exit gate: the reference contract is testable without external credentials or wr
 - [x] Test grant issuance denial paths, issuer membership, high-impact approval presence, revocation, repeated revocation, and immutable grant identity.
 - [ ] Wire membership, approval verification and grant-scope callbacks to authoritative host identity and policy services.
 - [x] Demonstrate issuance → authorized read → revoke → denied read and extension disable → denied read using a fake transport; no external GitHub operations are performed.
-- [x] Test process-style restart, migration from schema v1 to v2, future-schema rejection, and rollback when lifecycle, grant, or operation-audit insertion fails.
+- [x] Test process-style restart, schema v1→v3 migrations, future-schema rejection, and rollback when lifecycle, grant, or operation-audit insertion fails.
 
 Exit gate: the local reference adapter persists state atomically and the metadata gateway can record auditable, correlated decisions. Production use still requires authoritative caller identity, membership/approval verification, protected audit access, and production operational controls.
 
-### Phase 3 — Deterministic task runner
+### Phase 3 — Deterministic task runner (in progress)
 
 - [x] Define a typed execution envelope, stable error codes, JSON-only input contract and host-owned task allowlist.
-- [x] Implement manifest.validate as the first bounded host task; no third-party code or user-selected entrypoint is executed.
-- [x] Record run ID, target extension/version, actor, tenant, scope, input/output digests, outcome and duration in an in-memory result record.
+- [x] Implement `manifest.validate` as the first bounded host task; no third-party code or user-selected entrypoint is executed.
+- [x] Record run ID, target extension/version, actor, tenant, scope, input/output digests, outcome and duration.
 - [x] Enforce a maximum input size and reject unsupported task IDs and non-JSON inputs.
 - [x] Make identical retries with the same run ID idempotent and reject changed requests that reuse a run ID.
+- [x] Add optional SQLite-backed task results and request fingerprints; validate replay and run-ID conflicts across a process-style restart.
 - [ ] Add a hard timeout, OS-level CPU/memory controls and isolation before allowing tasks that can block or execute untrusted logic.
-- [ ] Replace process-local run history with durable audit/result storage.
 - [ ] Add queues only when a task requires asynchronous execution.
 
-Exit gate: the allowlisted validation task is deterministic and input-bounded; any additional task requiring preemptive resource enforcement must run in an isolated worker.
+Exit gate: the allowlisted validation task is deterministic, input-bounded, and optionally durable. Any additional task requiring preemptive resource enforcement must run in an isolated worker.
 
 ### Phase 4 — Event-driven integrations
 
