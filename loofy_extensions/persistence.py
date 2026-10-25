@@ -15,7 +15,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
+
+if TYPE_CHECKING:
+    from .providers.github_gateway import OperationAuditEvent
 
 from .grants import GrantAuditEvent, GrantConflictError, GrantPolicyError
 from .lifecycle import transition_record
@@ -23,7 +26,7 @@ from .models import AuditEvent, ExtensionKey, ExtensionRecord, ExtensionState
 from .policy import CapabilityGrant
 
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 
 class StorageError(RuntimeError):
@@ -144,6 +147,89 @@ class SQLiteStore:
             ).fetchall()
             return tuple(self._grant_event_from_row(row) for row in rows)
 
+    @property
+    def events(self) -> tuple[OperationAuditEvent, ...]:
+        """Return durable gateway audit events in insertion order."""
+        from .providers.github_gateway import OperationAuditEvent
+
+        with self._lock:
+            self._ensure_open()
+            rows = self._connection.execute(
+                "SELECT * FROM operation_audit_events ORDER BY event_id"
+            ).fetchall()
+            return tuple(
+                OperationAuditEvent(
+                    event_type=row["event_type"],
+                    extension_id=row["extension_id"],
+                    extension_version=row["extension_version"],
+                    manifest_digest=row["manifest_digest"],
+                    principal_id=row["principal_id"],
+                    tenant_id=row["tenant_id"],
+                    capability=row["capability"],
+                    resource_id=row["resource_id"],
+                    environment=row["environment"],
+                    outcome=row["outcome"],
+                    decision_code=row["decision_code"],
+                    occurred_at=_timestamp_from_db(row["occurred_at"]),
+                    source_id=row["source_id"],
+                    correlation_id=row["correlation_id"],
+                )
+                for row in rows
+            )
+
+    @property
+    def operation_audit_events(self) -> tuple[OperationAuditEvent, ...]:
+        """Named alias for the event collection exposed to the gateway audit sink."""
+        return self.events
+
+    def append(self, event: OperationAuditEvent) -> None:
+        """Durably append one operation event; compatible with OperationAuditSink."""
+        required_fields = (
+            "event_type",
+            "extension_id",
+            "extension_version",
+            "manifest_digest",
+            "principal_id",
+            "tenant_id",
+            "capability",
+            "resource_id",
+            "environment",
+            "outcome",
+            "decision_code",
+            "correlation_id",
+        )
+        for field_name in required_fields:
+            value = getattr(event, field_name, None)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"operation audit field {field_name} must be non-empty")
+        occurred_at_db = _timestamp_to_db(event.occurred_at)
+        with self._transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO operation_audit_events (
+                    event_type, extension_id, extension_version, manifest_digest,
+                    principal_id, tenant_id, capability, resource_id, environment,
+                    outcome, decision_code, occurred_at, source_id, correlation_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event.event_type,
+                    event.extension_id,
+                    event.extension_version,
+                    event.manifest_digest,
+                    event.principal_id,
+                    event.tenant_id,
+                    event.capability,
+                    event.resource_id,
+                    event.environment,
+                    event.outcome,
+                    event.decision_code,
+                    occurred_at_db,
+                    event.source_id,
+                    event.correlation_id,
+                ),
+            )
+
     def close(self) -> None:
         with self._lock:
             if not self._closed:
@@ -193,7 +279,7 @@ class SQLiteStore:
                 return
 
             # Re-read under the write transaction so simultaneous constructors
-            # cannot both apply the same migration after observing version zero.
+            # cannot both apply the same migration after observing an older version.
             with self._transaction() as connection:
                 locked_row = connection.execute(
                     "SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations"
@@ -203,17 +289,21 @@ class SQLiteStore:
                     raise SchemaVersionError(
                         f"Database schema version {locked_version} is newer than supported version {CURRENT_SCHEMA_VERSION}."
                     )
-                if locked_version == CURRENT_SCHEMA_VERSION:
-                    return
-                if locked_version != 0:
-                    raise SchemaVersionError(
-                        f"No migration path is defined from schema version {locked_version}."
+                while locked_version < CURRENT_SCHEMA_VERSION:
+                    next_version = locked_version + 1
+                    if next_version == 1:
+                        self._migration_1(connection)
+                    elif next_version == 2:
+                        self._migration_2(connection)
+                    else:
+                        raise SchemaVersionError(
+                            f"No migration path is defined to schema version {next_version}."
+                        )
+                    connection.execute(
+                        "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                        (next_version, _timestamp_to_db(datetime.now(timezone.utc))),
                     )
-                self._migration_1(connection)
-                connection.execute(
-                    "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-                    (1, _timestamp_to_db(datetime.now(timezone.utc))),
-                )
+                    locked_version = next_version
 
     @staticmethod
     def _migration_1(connection: sqlite3.Connection) -> None:
@@ -302,6 +392,37 @@ class SQLiteStore:
         )
         for statement in statements:
             connection.execute(statement)
+
+    @staticmethod
+    def _migration_2(connection: sqlite3.Connection) -> None:
+        """Add durable gateway operation audit and correlation identifiers."""
+        connection.execute(
+            """
+            CREATE TABLE operation_audit_events (
+                event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                extension_id TEXT NOT NULL,
+                extension_version TEXT NOT NULL,
+                manifest_digest TEXT NOT NULL,
+                principal_id TEXT NOT NULL,
+                tenant_id TEXT NOT NULL,
+                capability TEXT NOT NULL,
+                resource_id TEXT NOT NULL,
+                environment TEXT NOT NULL,
+                outcome TEXT NOT NULL,
+                decision_code TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                source_id TEXT,
+                correlation_id TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            "CREATE INDEX idx_operation_audit_scope_time ON operation_audit_events(tenant_id, resource_id, occurred_at, event_id)"
+        )
+        connection.execute(
+            "CREATE INDEX idx_operation_audit_correlation ON operation_audit_events(correlation_id, event_id)"
+        )
 
     def _ensure_open(self) -> None:
         if self._closed:

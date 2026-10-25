@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from threading import RLock
 from typing import Callable, Protocol, Sequence
+from uuid import uuid4
 
 from ..models import ExtensionKey, ExtensionRecord
 from ..policy import CapabilityGrant, CapabilityRequest, PolicyDecision, authorize
@@ -61,6 +62,7 @@ class OperationAuditEvent:
     decision_code: str
     occurred_at: datetime
     source_id: str | None = None
+    correlation_id: str = ""
 
 
 class OperationAuditSink(Protocol):
@@ -121,6 +123,7 @@ class AuthorizedGitHubMetadataReader:
         caller: CallerContext,
     ) -> GitHubRepositoryMetadata:
         resource_id = f"github:repository:{owner.casefold()}/{repository.casefold()}"
+        correlation_id = uuid4().hex
         now = self._now()
         try:
             record = self._record_loader()
@@ -132,6 +135,7 @@ class AuthorizedGitHubMetadataReader:
                 outcome="denied",
                 decision_code="authorization-context-unavailable",
                 occurred_at=now,
+                correlation_id=correlation_id,
             )
             raise AuthorizationContextUnavailable(
                 "Trusted extension or grant state is unavailable; request denied."
@@ -154,6 +158,7 @@ class AuthorizedGitHubMetadataReader:
                 outcome="denied",
                 decision_code=decision.code,
                 occurred_at=now,
+                correlation_id=correlation_id,
             )
             raise OperationAuthorizationError(decision)
 
@@ -165,6 +170,7 @@ class AuthorizedGitHubMetadataReader:
             outcome="authorized",
             decision_code=decision.code,
             occurred_at=now,
+            correlation_id=correlation_id,
         )
         try:
             result = self._provider.get_repository(owner, repository)
@@ -176,6 +182,7 @@ class AuthorizedGitHubMetadataReader:
                 outcome="provider-error",
                 decision_code=exc.code,
                 occurred_at=self._now(),
+                correlation_id=correlation_id,
             )
             raise
 
@@ -187,6 +194,7 @@ class AuthorizedGitHubMetadataReader:
             decision_code="ok",
             occurred_at=self._now(),
             source_id=result.source_id,
+            correlation_id=correlation_id,
         )
         return result
 
@@ -205,6 +213,7 @@ class AuthorizedGitHubMetadataReader:
         outcome: str,
         decision_code: str,
         occurred_at: datetime,
+        correlation_id: str,
         source_id: str | None = None,
     ) -> None:
         self._audit_sink.append(
@@ -222,6 +231,7 @@ class AuthorizedGitHubMetadataReader:
                 decision_code=decision_code,
                 occurred_at=occurred_at,
                 source_id=source_id,
+                correlation_id=correlation_id,
             )
         )
 
@@ -233,6 +243,7 @@ class AuthorizedGitHubMetadataReader:
         outcome: str,
         decision_code: str,
         occurred_at: datetime,
+        correlation_id: str,
     ) -> None:
         self._audit_sink.append(
             OperationAuditEvent(
@@ -248,5 +259,6 @@ class AuthorizedGitHubMetadataReader:
                 outcome=outcome,
                 decision_code=decision_code,
                 occurred_at=occurred_at,
+                correlation_id=correlation_id,
             )
         )
