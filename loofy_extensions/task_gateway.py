@@ -224,7 +224,6 @@ class AuthorizedTaskRunner:
                 decision_code=exc.code,
                 occurred_at=self._now(),
                 correlation_id=run_id,
-                input_digest=input_digest,
             )
             raise
         except Exception:
@@ -238,7 +237,6 @@ class AuthorizedTaskRunner:
                 decision_code="task-runtime-error",
                 occurred_at=self._now(),
                 correlation_id=run_id,
-                input_digest=input_digest,
             )
             raise
 
