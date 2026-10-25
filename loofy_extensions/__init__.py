@@ -3,6 +3,13 @@
 from .lifecycle import LifecycleTransitionError, transition_record
 from .models import AuditEvent, ExtensionKey, ExtensionRecord, ExtensionState
 from .policy import CapabilityGrant, CapabilityRequest, PolicyDecision, authorize
+from .grants import (
+    GrantAuditEvent,
+    GrantAuthority,
+    GrantConflictError,
+    GrantPolicyError,
+    InMemoryGrantStore,
+)
 from .registry import (
     DuplicateExtensionVersionError,
     ExtensionRegistry,
@@ -18,6 +25,11 @@ __all__ = [
     "ExtensionRecord",
     "ExtensionRegistry",
     "ExtensionState",
+    "GrantAuditEvent",
+    "GrantAuthority",
+    "GrantConflictError",
+    "GrantPolicyError",
+    "InMemoryGrantStore",
     "LifecycleTransitionError",
     "ManifestValidationError",
     "PolicyDecision",
