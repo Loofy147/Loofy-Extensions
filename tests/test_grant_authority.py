@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import copy
 import json
 import unittest
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
-from loofy_extensions import ExtensionKey, ExtensionRegistry, ExtensionState
+from loofy_extensions import ExtensionRegistry, ExtensionState
 from loofy_extensions.grants import (
     GrantAuthority,
     GrantConflictError,
@@ -67,7 +66,9 @@ class GrantAuthorityTests(unittest.TestCase):
                 lambda key: self.record if key == self.record.key else self.fail_record()
             ),
             tenant_member_verifier=tenant_member_verifier or (
-                lambda principal, tenant: principal == "user:alice" and tenant == "tenant:alpha"
+                lambda principal, tenant:
+                    principal in {"user:alice", "owner:alice"}
+                    and tenant == "tenant:alpha"
             ),
             grant_scope_authorizer=grant_scope_authorizer or (
                 lambda actor, tenant, capability, resource, environment:
@@ -123,6 +124,12 @@ class GrantAuthorityTests(unittest.TestCase):
         self.assertEqual(context.exception.code, "grant-not-authorized")
         self.assertEqual(self.store.active_grants(), ())
 
+    def test_rejects_issuer_without_tenant_membership(self) -> None:
+        with self.assertRaises(GrantPolicyError) as context:
+            self.issue(actor_id="owner:outsider")
+        self.assertEqual(context.exception.code, "actor-not-tenant-member")
+        self.assertEqual(self.store.active_grants(), ())
+
     def test_rejects_capability_not_requested_by_manifest(self) -> None:
         with self.assertRaises(GrantPolicyError) as context:
             self.issue(capability="repository.contents.write")
@@ -143,7 +150,15 @@ class GrantAuthorityTests(unittest.TestCase):
             self.record,
             requested_permissions=frozenset({"deployment.execute"}),
         )
-        authority = self.make_authority(record_loader=lambda key: writer_record)
+        authority = self.make_authority(
+            record_loader=lambda key: writer_record,
+            grant_scope_authorizer=lambda actor, tenant, capability, resource, environment:
+                actor == "owner:alice"
+                and tenant == "tenant:alpha"
+                and capability == "deployment.execute"
+                and resource == "repo:owner/name"
+                and environment == "test",
+        )
         with self.assertRaises(GrantPolicyError) as context:
             authority.issue_grant(
                 key=writer_record.key,
