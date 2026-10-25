@@ -15,6 +15,13 @@ from .registry import (
     ExtensionRegistry,
     ManifestValidationError,
 )
+from .tasks import (
+    ExecutionEnvelope,
+    TaskExecutionError,
+    TaskResult,
+    TaskRunConflictError,
+    TaskRunner,
+)
 
 __all__ = [
     "AuditEvent",
@@ -25,6 +32,7 @@ __all__ = [
     "ExtensionRecord",
     "ExtensionRegistry",
     "ExtensionState",
+    "ExecutionEnvelope",
     "GrantAuditEvent",
     "GrantAuthority",
     "GrantConflictError",
@@ -33,6 +41,10 @@ __all__ = [
     "LifecycleTransitionError",
     "ManifestValidationError",
     "PolicyDecision",
+    "TaskExecutionError",
+    "TaskResult",
+    "TaskRunConflictError",
+    "TaskRunner",
     "authorize",
     "transition_record",
 ]
