@@ -52,20 +52,21 @@ class SQLitePersistenceTests(unittest.TestCase):
         self.assertEqual(self.store.schema_version, CURRENT_SCHEMA_VERSION)
         self.assertEqual(self.store.integrity_check(), ("ok",))
 
-    def test_v1_schema_migrates_forward_to_operation_audit_v2(self) -> None:
+    def test_v2_schema_migrates_forward_to_durable_task_results_v3(self) -> None:
         self.store.close()
         raw = sqlite3.connect(self.database_path)
-        raw.execute("DROP INDEX IF EXISTS idx_operation_audit_scope_time")
-        raw.execute("DROP INDEX IF EXISTS idx_operation_audit_correlation")
-        raw.execute("DROP TABLE IF EXISTS operation_audit_events")
-        raw.execute("DELETE FROM schema_migrations WHERE version > 1")
+        raw.execute("DROP INDEX IF EXISTS idx_task_runs_tenant_time")
+        raw.execute("DROP INDEX IF EXISTS idx_task_runs_target")
+        raw.execute("DROP TABLE IF EXISTS task_runs")
+        raw.execute("DELETE FROM schema_migrations WHERE version > 2")
         raw.commit()
         raw.close()
 
         upgraded_store = SQLiteStore(self.database_path)
         self.store = upgraded_store
-        self.assertEqual(upgraded_store.schema_version, 2)
+        self.assertEqual(upgraded_store.schema_version, 3)
         self.assertEqual(upgraded_store.events, ())
+        self.assertEqual(upgraded_store.task_run_results, ())
         self.assertEqual(upgraded_store.integrity_check(), ("ok",))
 
     def test_operation_audit_events_survive_restart(self) -> None:
