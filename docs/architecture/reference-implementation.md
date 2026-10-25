@@ -14,7 +14,7 @@ The `loofy_extensions` package makes architecture decisions executable and testa
 - `grants.py`: grant issuance/revocation reference with host-supplied membership and scope-authority callbacks.
 - `persistence.py`: versioned SQLite schema v3 for extension records, lifecycle events, grants, grant events, gateway operation audit events, and optional task-run results. State and paired lifecycle/grant audit events are committed atomically; task results and their request fingerprints are persisted transactionally.
 - `providers/github_metadata.py` and `providers/github_gateway.py`: read-only GitHub metadata normalization and a host-side authorization/audit seam.
-- `tasks.py`: allowlisted, input-bounded `manifest.validate` task; no third-party code execution. Task results can be held in memory or persisted through the SQLite store.
+- `tasks.py` and `validation_worker.py`: allowlisted `manifest.validate` task, with default in-process validation and an opt-in subprocess worker with wall-clock/size bounds plus POSIX CPU/address-space/core limits. No third-party code execution. Task results can be held in memory or persisted through the SQLite store.
 - `task_gateway.py`: host-side `AuthorizedTaskRunner` wrapper; replaces envelope attribution with trusted caller context, invokes an injected authorizer, and emits correlated audit events before/after the task.
 
 ## Quick in-memory example
@@ -60,7 +60,7 @@ python scripts/validate_manifests.py
 - SQLite state survives a process restart, but the reference database remains a local single-host store, not a distributed/high-availability system.
 - The store does not authenticate the publisher or actor, mint credentials, receive webhooks, persist approval verification, or control an external API.
 - Grant membership, grant-scope authority and caller context must come from trusted host services. Approval references are pointers, not cryptographically verified evidence.
-- The task runner only exposes `manifest.validate`; it has no dynamic imports, hard preemptive timeout, OS-level resource limits, or worker isolation.
+- The task runner only exposes `manifest.validate`; isolated mode applies a wall-clock timeout and POSIX CPU/address-space/core limits to the built-in validator, but it is not a network sandbox or a general-purpose plugin sandbox.
 - The authorization wrapper does not authenticate `TaskCallerContext` or supply policy; host applications must enforce this.
 - Schema-valid data is not proof of publisher authenticity, license compatibility, artifact safety or permission.
 - A capability decision must never be trusted by itself for a consequential production side effect. The receiving API/service must authorize the real actor, tenant, target resource and environment again.
@@ -72,4 +72,4 @@ python scripts/validate_manifests.py
 3. Bind approval evidence to the exact extension digest, principal, scope, action and expiry.
 4. Wire host identity and policy services to grant issuance/revocation, task authorization and operation gateways.
 5. Define access control, retention, backup and tamper-evidence for durable audit.
-6. Add isolation and recovery evidence before third-party code execution.
+6. Design enforceable process/network isolation and recovery evidence before third-party code execution.
