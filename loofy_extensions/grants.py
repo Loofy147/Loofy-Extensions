@@ -8,7 +8,7 @@ the authorizer callbacks to authenticated identity and tenant membership data.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from threading import RLock
 from typing import Callable
 from uuid import uuid4
@@ -221,11 +221,14 @@ class GrantAuthority:
             raise GrantPolicyError("capability-not-requested", "The extension manifest did not request this capability.")
 
         try:
-            is_member = self._tenant_member_verifier(principal_id, tenant_id)
+            principal_is_member = self._tenant_member_verifier(principal_id, tenant_id)
+            actor_is_member = self._tenant_member_verifier(actor_id, tenant_id)
         except Exception:
             raise GrantPolicyError("membership-check-failed", "Tenant membership could not be verified.") from None
-        if not is_member:
+        if not principal_is_member:
             raise GrantPolicyError("principal-not-tenant-member", "The principal is not a verified member of the tenant.")
+        if not actor_is_member:
+            raise GrantPolicyError("actor-not-tenant-member", "The grant issuer is not a verified member of the tenant.")
 
         try:
             can_grant = self._grant_scope_authorizer(
@@ -268,6 +271,13 @@ class GrantAuthority:
             raise
         if revoked:
             raise GrantPolicyError("grant-already-revoked", "The grant is already revoked.")
+
+        try:
+            actor_is_member = self._tenant_member_verifier(actor_id, grant.tenant_id)
+        except Exception:
+            raise GrantPolicyError("membership-check-failed", "Tenant membership could not be verified.") from None
+        if not actor_is_member:
+            raise GrantPolicyError("actor-not-tenant-member", "The revocation actor is not a verified member of the tenant.")
 
         try:
             can_revoke = self._grant_scope_authorizer(
