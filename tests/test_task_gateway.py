@@ -140,6 +140,19 @@ class AuthorizedTaskRunnerTests(unittest.TestCase):
         self.assertEqual(self.runner.history, ())
         self.assertEqual(self.audit.events[0].decision_code, "authorization-context-unavailable")
 
+    def test_invalid_policy_decision_fails_closed(self) -> None:
+        self.gateway = AuthorizedTaskRunner(
+            self.runner,
+            authorizer=FakeAuthorizer(None),
+            audit_sink=self.audit,
+            clock=lambda: self.now,
+        )
+        with self.assertRaises(TaskAuthorizationContextUnavailable) as context:
+            self.gateway.run(envelope(), caller=self.caller)
+        self.assertEqual(context.exception.code, "invalid-authorization-decision")
+        self.assertEqual(self.runner.history, ())
+        self.assertEqual(self.audit.events[0].decision_code, "invalid-authorization-decision")
+
     def test_pre_run_audit_failure_blocks_task(self) -> None:
         self.gateway = AuthorizedTaskRunner(
             self.runner,
