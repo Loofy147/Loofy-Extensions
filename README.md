@@ -11,6 +11,7 @@ A governed foundation for discovering, describing, validating, and eventually ex
 - A schema validator and CI checks.
 - An in-memory reference registry with immutable version identity, an explicit lifecycle state machine, and audit events.
 - A default-deny capability authorization function requiring an exact, unexpired grant for a principal, capability, resource, and environment.
+- A read-only GitHub repository metadata provider behind a host-owned transport contract.
 - Architecture, trust boundaries, threat model, contribution/security guidance, and an implementation roadmap.
 
 ## Important security boundary
@@ -30,7 +31,7 @@ A valid manifest does **not** grant permissions. Registering an extension does *
 | Declarative extension | Metadata, rules, and configuration with no arbitrary code execution |
 | Sandboxed artifact | Selected third-party executable workload behind isolation and review |
 
-See [extension type taxonomy](docs/architecture/extension-types.md), [reference architecture](docs/architecture/reference-architecture.md), and [Phase 1 contract review](docs/architecture/phase-1-contract-review.md).
+See [extension type taxonomy](docs/architecture/extension-types.md), [reference architecture](docs/architecture/reference-architecture.md), [Phase 1 contract review](docs/architecture/phase-1-contract-review.md), and [read-only GitHub metadata provider](docs/architecture/github-metadata-provider.md).
 
 ## Validate locally
 
@@ -46,12 +47,13 @@ The GitHub Actions workflow runs the same checks for pull requests and pushes to
 
 ## Package core
 
-The `loofy_extensions` package currently offers an in-memory reference implementation for the contract, registry, lifecycle and policy boundaries. It must not be treated as a durable registry or a plugin loader. See [reference implementation](docs/architecture/reference-implementation.md).
+The `loofy_extensions` package currently offers an in-memory reference implementation for the contract, registry, lifecycle and policy boundaries. The GitHub metadata provider is a read-only adapter with an injected HTTP transport; it does not acquire credentials or perform external writes. Neither component should be treated as a complete production service. See [reference implementation](docs/architecture/reference-implementation.md).
 
 ## Documentation
 
 - Architecture: [reference architecture](docs/architecture/reference-architecture.md)
 - Phase 1 review: [lifecycle, authorization, and provenance contracts](docs/architecture/phase-1-contract-review.md)
+- Read-only provider: [GitHub metadata provider](docs/architecture/github-metadata-provider.md)
 - Reference code boundaries: [reference implementation](docs/architecture/reference-implementation.md)
 - Extension type taxonomy: [extension types](docs/architecture/extension-types.md)
 - Architecture decision: [ADR 0001 — Extension Boundaries](docs/architecture/decisions/0001-extension-boundaries.md)
