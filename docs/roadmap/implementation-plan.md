@@ -40,7 +40,7 @@ Exit gate: the reference contract is testable without external credentials or wr
 - [x] Test grant issuance denial paths, issuer membership, high-impact approval presence, revocation, repeated revocation, and immutable grant identity.
 - [ ] Wire membership and grant-scope callbacks to authoritative host identity and policy services.
 - [ ] Replace process-local grant/revocation state and grant audit events with transactional durable storage.
-- [ ] Demonstrate disable/revoke behavior without external writes.
+- [x] Demonstrate issuance → authorized read → revoke → denied read and extension disable → denied read using a fake transport; no external GitHub operations are performed.
 
 Exit gate: read-only operation is authorized, attributable, testable, and revocable. The provider and in-memory gateway are reference seams, not a production-ready authorization or audit service.
 
