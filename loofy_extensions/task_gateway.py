@@ -7,8 +7,6 @@ emits audit records before and after the allowlisted built-in task.
 
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Callable, Protocol
@@ -46,8 +44,13 @@ class TaskCallerContext:
     def __post_init__(self) -> None:
         for field_name in ("principal_id", "tenant_id", "environment"):
             value = getattr(self, field_name)
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"{field_name} is required")
+            if (
+                not isinstance(value, str)
+                or not value.strip()
+                or len(value.strip()) > 256
+                or any(ord(character) < 32 for character in value)
+            ):
+                raise ValueError(f"{field_name} must be a valid non-empty string of at most 256 characters")
 
 
 @dataclass(frozen=True)
@@ -72,21 +75,6 @@ class TaskAuthorizer(Protocol):
         environment: str,
     ) -> TaskAuthorizationDecision:
         """Return an explicit allow or deny decision."""
-
-
-def _task_input_digest(envelope: ExecutionEnvelope) -> str:
-    """Hash JSON-compatible manifest input without retaining the input itself."""
-    try:
-        payload = json.dumps(
-            dict(envelope.manifest),
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        ).encode("utf-8")
-    except (TypeError, ValueError, UnicodeError):
-        return "unavailable"
-    return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
 class AuthorizedTaskRunner:
@@ -154,8 +142,6 @@ class AuthorizedTaskRunner:
             resource_id=resource_id,
             environment=caller.environment,
         )
-        input_digest = _task_input_digest(authorized_envelope)
-
         try:
             decision = self._authorizer.authorize(
                 principal_id=caller.principal_id,
@@ -174,13 +160,19 @@ class AuthorizedTaskRunner:
                 decision_code="authorization-context-unavailable",
                 occurred_at=self._now(),
                 correlation_id=run_id,
-                input_digest=input_digest,
             )
             raise TaskAuthorizationContextUnavailable(
                 "Trusted task authorization is unavailable; task request denied."
             ) from None
 
-        if not isinstance(decision, TaskAuthorizationDecision):
+        if (
+            not isinstance(decision, TaskAuthorizationDecision)
+            or not isinstance(decision.allowed, bool)
+            or not isinstance(decision.code, str)
+            or not decision.code.strip()
+            or len(decision.code.strip()) > 128
+            or not isinstance(decision.message, str)
+        ):
             self._emit(
                 envelope=authorized_envelope,
                 caller=caller,
@@ -190,8 +182,7 @@ class AuthorizedTaskRunner:
                 decision_code="invalid-authorization-decision",
                 occurred_at=self._now(),
                 correlation_id=run_id,
-                input_digest=input_digest,
-            )
+                )
             raise TaskAuthorizationContextUnavailable(
                 "Task authorization did not return a valid decision; task request denied."
             )
@@ -218,7 +209,7 @@ class AuthorizedTaskRunner:
             task_id=task_id,
             resource_id=resource_id,
             outcome="authorized",
-            decision_code=decision.code or "authorized",
+            decision_code=self._required_id(decision.code, "decision.code", maximum=128),
             occurred_at=self._now(),
             correlation_id=run_id,
             input_digest=input_digest,
