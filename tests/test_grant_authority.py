@@ -173,6 +173,40 @@ class GrantAuthorityTests(unittest.TestCase):
             )
         self.assertEqual(context.exception.code, "approval-required")
 
+    def test_rejects_non_datetime_expiry(self) -> None:
+        with self.assertRaises(GrantPolicyError) as context:
+            self.issue(expires_at="tomorrow")
+        self.assertEqual(context.exception.code, "invalid-expiry")
+
+    def test_high_impact_grant_rejects_blank_approval_reference(self) -> None:
+        writer_record = replace(
+            self.record,
+            requested_permissions=frozenset({"deployment.execute"}),
+        )
+        authority = self.make_authority(
+            record_loader=lambda key: writer_record,
+            grant_scope_authorizer=lambda actor, tenant, capability, resource, environment:
+                actor == "owner:alice"
+                and tenant == "tenant:alpha"
+                and capability == "deployment.execute"
+                and resource == "repo:owner/name"
+                and environment == "test",
+        )
+        with self.assertRaises(GrantPolicyError) as context:
+            authority.issue_grant(
+                key=writer_record.key,
+                principal_id="user:alice",
+                tenant_id="tenant:alpha",
+                capability="deployment.execute",
+                resource_id="repo:owner/name",
+                environment="test",
+                actor_id="owner:alice",
+                reason="test blank approval",
+                expires_at=self.now + timedelta(hours=1),
+                approval_ref="   ",
+            )
+        self.assertEqual(context.exception.code, "approval-required")
+
     def test_record_loader_failure_fails_closed(self) -> None:
         authority = self.make_authority(record_loader=self.fail_record)
         with self.assertRaises(GrantPolicyError) as context:
