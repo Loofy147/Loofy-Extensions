@@ -19,7 +19,7 @@ from loofy_extensions.validation import DEFAULT_EXAMPLES
 
 def enabled_record(registry: ExtensionRegistry):
     manifest = json.loads(
-        next(DEFAULT_EXAMPLES.rglob("extension.json")).read_text(encoding="utf-8")
+        (DEFAULT_EXAMPLES / "manifest-validator" / "extension.json").read_text(encoding="utf-8")
     )
     manifest["permissions"]["requested"] = ["repository.contents.read"]
     manifest["capabilities"]["requires"] = ["repository.contents.read"]
