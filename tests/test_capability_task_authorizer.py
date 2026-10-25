@@ -69,21 +69,22 @@ class CapabilityTaskAuthorizationIntegrationTests(unittest.TestCase):
         self.store = SQLiteStore(Path(self.temporary_directory.name) / "task-auth.sqlite3")
         self.registry = ExtensionRegistry(store=self.store)
         record = self.registry.register(task_runner_manifest())
-        for target, kwargs in (
+        transitions = (
             (ExtensionState.EVALUATING, {}),
             (ExtensionState.APPROVED, {"approval_ref": "review:task-runner"}),
             (ExtensionState.INSTALLED, {}),
             (ExtensionState.CONFIGURED, {}),
             (ExtensionState.VALIDATED, {}),
             (ExtensionState.ENABLED, {}),
-        ):
+        )
+        for offset, (target, kwargs) in enumerate(transitions):
             record = self.registry.transition(
                 record.key.extension_id,
                 record.key.version,
                 target,
                 actor="test-owner",
                 reason=f"register built-in task runner: {target.value}",
-                occurred_at=FIXED_NOW + timedelta(seconds=len(kwargs)),
+                occurred_at=FIXED_NOW + timedelta(seconds=offset),
                 **kwargs,
             )
         self.record = record
