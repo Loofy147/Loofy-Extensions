@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-This is the target architecture, not a claim that the current repository already implements the services described here. The first deliverable is the declarative contract plus validation. The runtime is deferred until the contract and governance model are tested.
+This document describes the target architecture and distinguishes implemented reference code from future services. The repository currently contains a declarative manifest contract, schema validator, and an in-memory reference registry/policy/lifecycle module. It does not yet implement the production services below.
 
 ## Design rules
 
@@ -43,7 +43,7 @@ audit log, metrics/traces, rate limits, health checks, backup and recovery.
 | --- | --- | --- |
 | Registry | Stable ID, publisher, version, source, digest, license, review state, compatibility | Execute code simply because metadata was discovered |
 | Schema validator | Contract shape and required metadata | Treat a valid manifest as permission to act |
-| Lifecycle manager | Install/configure/validate/enable/update/disable/uninstall/rollback state | Perform privileged writes without policy and audit |
+| Lifecycle manager | Install/configure/validate/enable/update/disable/uninstall state | Perform privileged writes without policy and audit |
 | Policy gateway | Principal, tenant, resource and action-level authorization | Trust a UI, extension description, or model output as authority |
 | Secret service | Encrypted values, rotation, short-lived credential issuance | Expose raw secrets to the registry, event payload, UI, or model context |
 | Connector adapter | Vendor-specific API, event normalization and rate-limit handling | Bypass policy for privileged actions |
@@ -51,6 +51,18 @@ audit log, metrics/traces, rate limits, health checks, backup and recovery.
 | Event queue | Delivery deduplication, retries, replay and dead-letter records | Assume events arrive once or in order |
 | Provenance layer | Source identities, timestamps, IDs, artifacts, links, conflict records | Erase origin data or silently overwrite conflicts |
 | Audit/observability | Version, scope, actor, input/output references, duration, status and policy result | Log secrets or retain unnecessary sensitive payloads |
+
+## Implemented reference slice
+
+The `loofy_extensions` package demonstrates several boundaries in-process:
+
+- A schema-backed registry stores a validated manifest projection under a stable `(extension_id, version)` key.
+- The manifest is canonicalized and hashed; an identical registration is idempotent, while different content for an existing key is rejected.
+- A lifecycle transition map blocks invalid jumps and emits immutable audit-event objects.
+- A capability policy denies by default and requires an exact grant matching extension version, principal, capability, resource, and environment. Grants must be unexpired, and high-impact permissions require approval evidence.
+- No registered code is loaded or executed.
+
+These are reference semantics only. There is no persistent storage, transactional cross-process concurrency, tenant store, external API enforcement, credential minting, durable audit ledger, sandbox, or queue yet. The reference grant model must not be used as the sole authorization control for production side effects.
 
 ## Extension lifecycle
 
@@ -62,10 +74,13 @@ Transitions that broaden access, enable writes, or affect production require rec
 
 Assume at-least-once delivery unless a provider's contract establishes otherwise. Verify webhook signatures, validate event/action types, acknowledge quickly, enqueue durably, and de-duplicate delivery IDs. Handlers with side effects need idempotency keys and bounded retry/backoff. Record partial failures and compensation steps rather than claiming cross-system atomicity.
 
-## First two implementation slices
+## First production implementation slices
 
-1. A read-only repository metadata provider, proving identity, scopes, normalized output, and provenance.
-2. A deterministic manifest/configuration validator, proving bounded jobs, explicit inputs/outputs, test evidence, and safe failure.
+1. Replace the process-local registry with a transactional persistence adapter behind the same interface.
+2. Add a read-only repository metadata provider, proving identity, scopes, normalized output, and provenance.
+3. Define an execution envelope, then add a deterministic validation task before any third-party code runner.
+4. Add per-operation authorization, secret issuance, audit durability, and explicit revocation.
+5. Add webhook intake, queues, idempotency, retry/backoff, and dead-letter handling only when event-driven integrations require them.
 
 Do not start with arbitrary third-party code execution, public plugin submissions, production deployment, or broad PAT collection.
 
