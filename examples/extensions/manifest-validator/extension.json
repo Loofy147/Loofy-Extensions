@@ -1,0 +1,67 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Loofy147/Loofy-Extensions/main/schemas/extension-manifest.schema.json",
+  "apiVersion": "extensions.loofy/v1alpha1",
+  "kind": "Extension",
+  "metadata": {
+    "id": "com.loofy.extensions.manifest-validator",
+    "name": "Manifest Validator Reference",
+    "version": "0.1.0",
+    "publisher": "Loofy147",
+    "description": "Reference metadata for the contract-validation task. This specimen does not register or execute a plugin.",
+    "license": "MIT",
+    "source": "https://github.com/Loofy147/Loofy-Extensions",
+    "homepage": "https://github.com/Loofy147/Loofy-Extensions",
+    "tags": [
+      "validation",
+      "reference"
+    ]
+  },
+  "runtime": {
+    "type": "trusted-host-task",
+    "entrypoint": "scripts/validate_manifests.py",
+    "network": {
+      "default": "deny",
+      "allowHosts": []
+    }
+  },
+  "capabilities": {
+    "provides": [
+      "manifest.validate"
+    ],
+    "requires": [
+      "repository.contents.read"
+    ]
+  },
+  "permissions": {
+    "requested": [
+      "repository.contents.read"
+    ]
+  },
+  "triggers": [
+    {
+      "type": "manual",
+      "events": [
+        "validate"
+      ]
+    }
+  ],
+  "execution": {
+    "timeoutSeconds": 60,
+    "maxMemoryMiB": 256,
+    "cpuLimit": "1"
+  },
+  "secrets": {
+    "references": []
+  },
+  "approval": {
+    "writeOperations": "none"
+  },
+  "observability": {
+    "emits": [
+      "started",
+      "completed",
+      "failed",
+      "permission-denied"
+    ]
+  }
+}
