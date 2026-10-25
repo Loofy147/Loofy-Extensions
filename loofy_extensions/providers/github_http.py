@@ -39,7 +39,7 @@ class UrllibGitHubTransport:
 
     API_ORIGIN = "https://api.github.com"
     _REPOSITORY_PATH = re.compile(
-        r"^/repos/[A-Za-z0-9-]+/[A-Za-z0-9_.-]+$"
+        r"^/repos/[A-Za-z0-9-]{1,39}/[A-Za-z0-9_.-]{1,100}$"
     )
 
     def __init__(
@@ -66,6 +66,7 @@ class UrllibGitHubTransport:
         if (
             not isinstance(user_agent, str)
             or not user_agent.strip()
+            or len(user_agent) > 128
             or any(ord(character) < 32 or ord(character) == 127 for character in user_agent)
         ):
             raise ValueError("user_agent must be a non-empty string without control characters")
@@ -98,6 +99,7 @@ class UrllibGitHubTransport:
                 if (
                     not isinstance(token, str)
                     or not token.strip()
+                    or len(token) > 8192
                     or any(ord(character) < 33 or ord(character) == 127 for character in token)
                 ):
                     raise ProviderError(
@@ -170,7 +172,8 @@ class UrllibGitHubTransport:
         except ValueError:
             raise ProviderError("invalid-url", "GitHub request URL is malformed.") from None
         if (
-            parsed.scheme != "https"
+            len(url) > 2048
+            or parsed.scheme != "https"
             or parsed.hostname != "api.github.com"
             or parsed.username is not None
             or parsed.password is not None
@@ -180,6 +183,7 @@ class UrllibGitHubTransport:
             or parsed.path in ("/", "")
             or cls._REPOSITORY_PATH.fullmatch(parsed.path) is None
             or any(segment in {".", ".."} for segment in parsed.path.split("/"))
+            or parsed.path.rsplit("/", 1)[-1].endswith(".")
             or "%" in parsed.path
             or any(ord(character) < 32 or ord(character) == 127 for character in url)
         ):
