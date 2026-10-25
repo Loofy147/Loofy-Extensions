@@ -27,22 +27,23 @@ Exit gate: the reference contract is testable without external credentials or wr
 
 ### Phase 2 — Registry, read-only provider and grant lifecycle (in progress)
 
-- [ ] Define transactional persistence and migration requirements.
-- [ ] Persist lifecycle state and audit events atomically.
+- [x] Define transactional persistence and migration requirements.
+- [x] Persist extension lifecycle state and lifecycle audit events atomically in the SQLite reference adapter.
 - [x] Implement a narrow read-only GitHub.com repository metadata provider behind an injected transport contract.
 - [x] Normalize repository identity, visibility, default branch, links, source timestamps, retrieval time and ETag provenance.
 - [x] Add provider contract tests for identity mismatch, untrusted input, upstream failures and timestamp validity.
 - [x] Add tenant scope to capability requests and grants; test cross-tenant denial.
 - [x] Add a host-side metadata operation gateway that authorizes before outbound reads, fails closed on unavailable policy state, and emits decision/outcome events.
 - [ ] Wire caller context and policy loaders to the actual host authentication, current grant store, and extension registry.
-- [ ] Replace the in-memory audit sink with durable, access-controlled operation audit storage.
+- [ ] Replace the in-memory operation audit sink with durable, access-controlled gateway audit storage.
 - [x] Add an in-memory grant issuance/revocation reference with injected tenant-membership and grant-scope checks, future-expiry validation, immutable IDs, and audit events.
 - [x] Test grant issuance denial paths, issuer membership, high-impact approval presence, revocation, repeated revocation, and immutable grant identity.
 - [ ] Wire membership and grant-scope callbacks to authoritative host identity and policy services.
-- [ ] Replace process-local grant/revocation state and grant audit events with transactional durable storage.
+- [x] Add a SQLite-backed grant store with tenant scope, expiry, and revocation state; persist grant state and its audit events atomically.
+- [x] Test persistence across process-style reopen, lifecycle/grant audit transaction rollback, immutable version/grant conflicts, and future-schema rejection.
 - [x] Demonstrate issuance → authorized read → revoke → denied read and extension disable → denied read using a fake transport; no external GitHub operations are performed.
 
-Exit gate: read-only operation is authorized, attributable, testable, and revocable. The provider and in-memory gateway are reference seams, not a production-ready authorization or audit service.
+Exit gate: the local reference adapter persists state atomically, and the metadata operation can be tested against revocation/disablement. Production use still requires authoritative caller identity, membership/approval verification, current policy loaders, and durable operation audit storage.
 
 ### Phase 3 — Deterministic task runner
 
