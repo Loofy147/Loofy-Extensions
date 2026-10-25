@@ -111,6 +111,7 @@ class GrantBoundaryTests(unittest.TestCase):
         self.request = CapabilityRequest(
             key=self.record.key,
             principal_id="user:test",
+            tenant_id="tenant:test",
             capability="repository.contents.read",
             resource_id="repo:owner/name",
             environment="test",
@@ -119,6 +120,7 @@ class GrantBoundaryTests(unittest.TestCase):
             grant_id="grant-boundary",
             key=self.record.key,
             principal_id=self.request.principal_id,
+            tenant_id=self.request.tenant_id,
             capability=self.request.capability,
             resource_id=self.request.resource_id,
             environment=self.request.environment,
