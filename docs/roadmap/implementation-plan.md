@@ -32,11 +32,14 @@ Exit gate: the reference contract is testable without external credentials or wr
 - [x] Implement a narrow read-only GitHub.com repository metadata provider behind an injected transport contract.
 - [x] Normalize repository identity, visibility, default branch, links, source timestamps, retrieval time and ETag provenance.
 - [x] Add provider contract tests for identity mismatch, untrusted input, upstream failures and timestamp validity.
-- [ ] Wire the provider through the host's real identity and authorization boundary.
-- [ ] Add host-level operation audit events with principal, tenant, resource, outcome and correlation ID.
+- [x] Add tenant scope to capability requests and grants; test cross-tenant denial.
+- [x] Add a host-side metadata operation gateway that authorizes before outbound reads, fails closed on unavailable policy state, and emits decision/outcome events.
+- [ ] Wire caller context and policy loaders to the actual host authentication, current grant store, and extension registry.
+- [ ] Replace the in-memory audit sink with durable, access-controlled operation audit storage.
+- [ ] Define grant issuance, authorization of grant issuers, revocation, and tenant membership verification.
 - [ ] Demonstrate disable/revoke behavior without external writes.
 
-Exit gate: read-only operation is authorized, attributable, testable, and revocable. The provider module alone does not satisfy the full gate.
+Exit gate: read-only operation is authorized, attributable, testable, and revocable. The provider and in-memory gateway are reference seams, not a production-ready authorization or audit service.
 
 ### Phase 3 — Deterministic task runner
 
