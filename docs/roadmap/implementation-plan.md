@@ -25,7 +25,7 @@ Exit gate: manifests can be reviewed and validated before an extension is approv
 
 Exit gate: the reference contract is testable without external credentials or writes. This is not a production authorization or persistence system.
 
-### Phase 2 — Durable registry and read-only provider (in progress)
+### Phase 2 — Registry, read-only provider and grant lifecycle (in progress)
 
 - [ ] Define transactional persistence and migration requirements.
 - [ ] Persist lifecycle state and audit events atomically.
@@ -46,13 +46,16 @@ Exit gate: read-only operation is authorized, attributable, testable, and revoca
 
 ### Phase 3 — Deterministic task runner
 
-- [ ] Define execution envelope, typed inputs/outputs, timeout, resource budget and error taxonomy.
-- [ ] Implement the manifest/configuration validation task as the first bounded action.
-- [ ] Record extension/version/digest, actor, scope, input/output references, outcome and duration.
-- [ ] Add queueing/retries only where tasks require asynchronous execution.
-- [ ] Prove retries do not create duplicate side effects.
+- [x] Define a typed execution envelope, stable error codes, JSON-only input contract and host-owned task allowlist.
+- [x] Implement `manifest.validate` as the first bounded host task; no third-party code or user-selected entrypoint is executed.
+- [x] Record run ID, target extension/version, actor, tenant, scope, input/output digests, outcome and duration in an in-memory result record.
+- [x] Enforce a maximum input size and reject unsupported task IDs and non-JSON inputs.
+- [x] Make identical retries with the same run ID idempotent and reject changed requests that reuse a run ID.
+- [ ] Add a hard timeout, OS-level CPU/memory controls and isolation before allowing tasks that can block or execute untrusted logic.
+- [ ] Replace process-local run history with durable audit/result storage.
+- [ ] Add queues only when a task requires asynchronous execution.
 
-Exit gate: execution is bounded and its results can be traced and reproduced.
+Exit gate: the allowlisted validation task is deterministic and input-bounded; any additional task requiring preemptive resource enforcement must run in an isolated worker.
 
 ### Phase 4 — Event-driven integrations
 
