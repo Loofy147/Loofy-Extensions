@@ -56,6 +56,7 @@ Exit gate: the local reference adapter persists state atomically and the metadat
 - [x] Make identical retries with the same run ID idempotent and reject changed requests that reuse a run ID.
 - [x] Add optional SQLite-backed task results and request fingerprints; validate replay and run-ID conflicts across a process-style restart.
 - [x] Add a host-side task authorization wrapper that overrides envelope identity from trusted caller context, checks policy before execution, and audits correlated outcomes.
+- [x] Add a canonical, schema-validated host-owned task-runner manifest declaring `task.manifest.validate` with network access denied by default.
 - [x] Add a capability-policy adapter mapping `manifest.validate` to `task.manifest.validate` using the existing tenant-scoped exact-grant evaluator.
 - [ ] Bind record/grant loaders and caller context to the host's authoritative registry, grant store, identity and tenant/resource policy services.
 - [x] Add opt-in isolated subprocess execution for the built-in manifest validator, with a wall-clock deadline, POSIX CPU/address-space/core-file limits, and bounded JSON request/response messages.
