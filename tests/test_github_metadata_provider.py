@@ -113,6 +113,22 @@ class GitHubRepositoryMetadataProviderTests(unittest.TestCase):
         with self.assertRaises(ProviderError):
             self.provider.get_repository("Loofy147", "Loofy-Extensions")
 
+    def test_rejects_untrusted_api_origin(self) -> None:
+        with self.assertRaises(ValueError):
+            GitHubRepositoryMetadataProvider(
+                self.transport,
+                api_base_url="https://api.github.com.attacker.invalid",
+            )
+        self.assertEqual(self.transport.urls, [])
+
+    def test_rejects_untrusted_html_link(self) -> None:
+        payload = repository_payload()
+        payload["html_url"] = "https://github.com.attacker.invalid/Loofy147/Loofy-Extensions"
+        self.transport.response = GitHubHttpResponse(200, payload, {})
+        with self.assertRaises(ProviderError) as context:
+            self.provider.get_repository("Loofy147", "Loofy-Extensions")
+        self.assertEqual(context.exception.code, "invalid-payload")
+
 
 if __name__ == "__main__":
     unittest.main()
