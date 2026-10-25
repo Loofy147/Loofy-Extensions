@@ -6,7 +6,7 @@ Status: host-side reference wrapper for the built-in manifest validation task. I
 
 The wrapper takes a typed task envelope and a separate `TaskCallerContext`. That context must be constructed by the host authentication layer. Before calling the task runner, it overwrites the envelope's actor, tenant, and environment fields with that context. Values supplied in those envelope fields cannot influence authorization or task-result attribution.
 
-The wrapper asks the injected `TaskAuthorizer` to authorize the principal, tenant, task ID, resource and environment against current host policy. It only accepts an explicit typed decision. A denied decision, malformed decision, or policy callback failure does not run the task. Policy lookup failures are converted to a stable denial rather than exposing internal exception details.
+The wrapper asks the injected `TaskAuthorizer` to authorize the principal, tenant, task ID, resource and environment against current host policy. The package includes `CapabilityTaskAuthorizer`, which maps the allowlisted `manifest.validate` task to `task.manifest.validate` and calls the existing exact-match, tenant-scoped `authorize()` policy using record and active-grant loaders. It only accepts an explicit typed decision. A denied decision, malformed decision, or policy callback failure does not run the task. Policy lookup failures are converted to a stable denial rather than exposing internal exception details.
 
 The wrapper writes an authorization event to the supplied operation-audit sink before running the task. If that append fails, the task is not invoked. Completion, validation failure, and task errors are then recorded under the same correlation ID (the validated run ID). The SQLite store can be used as the sink, so authorization and outcome events survive a restart.
 
@@ -24,30 +24,40 @@ The wrapper writes an authorization event to the supplied operation-audit sink b
 ~~~python
 from loofy_extensions import (
     AuthorizedTaskRunner,
+    CapabilityTaskAuthorizer,
+    ExtensionKey,
+    ExtensionRegistry,
     SQLiteStore,
     TaskRunner,
 )
 
 with SQLiteStore("var/loofy-extensions.sqlite3") as store:
-    runner = TaskRunner(store=store)
+    registry = ExtensionRegistry(store=store)
+    task_key = ExtensionKey("com.loofy.extensions.task-runner", "1.0.0")
+    authorizer = CapabilityTaskAuthorizer(
+        extension_key=task_key,
+        record_loader=lambda key: registry.get(key.extension_id, key.version),
+        grants_loader=store.active_grants,
+    )
+    runner = TaskRunner(store=store, isolated_validation=True)
     authorized_runner = AuthorizedTaskRunner(
         runner,
-        authorizer=host_task_authorizer,
+        authorizer=authorizer,
         audit_sink=store,
     )
     # caller_context must be produced by host authentication.
     result = authorized_runner.run(envelope, caller=caller_context)
 ~~~
 
-`host_task_authorizer` is a host-owned implementation satisfying the `TaskAuthorizer` contract; it is deliberately not invented or supplied by this package. A production adapter must resolve authenticated identity, tenant membership and task/resource policy from authoritative sources.
+The task extension record must be enabled and request the capability `task.manifest.validate`. Grant creation still goes through `GrantAuthority` with host-verified tenant membership and grant-scope authority. Record/grant loaders must be current and authoritative; this adapter does not authenticate callers or issue grants.
 
 ## Boundaries still outstanding
 
 - The core `TaskRunner` remains directly callable for tests and trusted internal use. Applications exposed to users should expose `AuthorizedTaskRunner` or an equivalent host authorization boundary, not the bare runner.
 - The wrapper cannot authenticate `TaskCallerContext`; callers must prevent end users from constructing or modifying it.
-- The reference wrapper does not provision policy grants, manage memberships, verify approvals, or supply a durable policy engine.
+- `CapabilityTaskAuthorizer` reuses the existing grant evaluator but does not provision grants, manage memberships, authenticate callers, or verify approval references.
 - SQLite audit rows are durable but not tamper-evident and still need production access control, retention, backup and monitoring.
-- The runner still has no hard preemptive timeout, OS-level CPU/memory quotas, worker isolation, or queue supervision.
+- The isolated validator worker has a wall-clock timeout and POSIX CPU/address-space limits, but is not a network sandbox or general-purpose plugin sandbox; queue supervision remains deferred.
 
 ## Tests
 
