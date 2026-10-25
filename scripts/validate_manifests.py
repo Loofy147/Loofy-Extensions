@@ -4,75 +4,26 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
-from typing import Any
 
-from jsonschema import Draft202012Validator, FormatChecker
-from jsonschema.exceptions import SchemaError, ValidationError
-
-REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SCHEMA = REPOSITORY_ROOT / "schemas" / "extension-manifest.schema.json"
-DEFAULT_EXAMPLES = REPOSITORY_ROOT / "examples" / "extensions"
-
-
-def load_schema(schema_path: Path) -> dict[str, Any]:
-    """Load and validate the schema itself before validating any manifest."""
-    try:
-        schema = json.loads(schema_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ValueError(f"Could not read schema {schema_path}: {exc}") from exc
-
-    try:
-        Draft202012Validator.check_schema(schema)
-    except SchemaError as exc:
-        raise ValueError(f"Schema is not valid JSON Schema Draft 2020-12: {exc.message}") from exc
-    return schema
+from loofy_extensions.validation import (
+    DEFAULT_EXAMPLES,
+    DEFAULT_SCHEMA,
+    discover_manifests,
+    load_schema,
+    validate_manifest_file,
+)
 
 
-def validate_manifest(
-    manifest_path: Path,
-    schema: dict[str, Any],
-) -> list[str]:
-    """Return human-readable validation errors; an empty list means success."""
-    try:
-        instance = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        return [f"{manifest_path}: could not read valid JSON: {exc}"]
-
-    validator = Draft202012Validator(schema, format_checker=FormatChecker())
-    errors = sorted(
-        validator.iter_errors(instance),
-        key=lambda error: (
-            tuple(str(part) for part in error.absolute_path),
-            error.message,
-        ),
-    )
-    messages: list[str] = []
-    for error in errors:
-        location = "$"
-        for part in error.absolute_path:
-            location += f"[{part}]" if isinstance(part, int) else f".{part}"
-        messages.append(f"{manifest_path}:{location}: {error.message}")
-    return messages
-
-
-def discover_manifests(directory: Path) -> list[Path]:
-    """Find contract examples without accidentally treating the schema as a manifest."""
-    if not directory.exists():
-        return []
-    return sorted(directory.rglob("extension.json"))
+def validate_manifest(manifest_path: Path, schema: dict) -> list[str]:
+    """Compatibility wrapper used by the test suite and CLI."""
+    return validate_manifest_file(manifest_path, schema)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--schema",
-        type=Path,
-        default=DEFAULT_SCHEMA,
-        help="Path to the JSON Schema.",
-    )
+    parser.add_argument("--schema", type=Path, default=DEFAULT_SCHEMA, help="Path to the JSON Schema.")
     parser.add_argument(
         "--manifest",
         type=Path,
@@ -94,7 +45,7 @@ def main() -> int:
 
     failures = 0
     for manifest in manifests:
-        errors = validate_manifest(manifest, schema)
+        errors = validate_manifest_file(manifest, schema)
         if errors:
             failures += 1
             print(f"FAIL {manifest}")

@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "loofy-extensions-core"
+version = "0.1.0"
+description = "Reference manifest, registry, lifecycle, and capability-policy core for Loofy Extensions"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = ["jsonschema==4.26.0"]
+
+[tool.setuptools.packages.find]
+include = ["loofy_extensions*"]
