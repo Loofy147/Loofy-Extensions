@@ -29,6 +29,7 @@ Exit gate: the reference contract is testable without external credentials or wr
 
 - [x] Define transactional persistence and ordered schema migrations.
 - [x] Persist extension lifecycle state and lifecycle audit events atomically in the SQLite reference adapter.
+- [x] Restrict existing/new SQLite main database files and active WAL/SHM sidecars to owner-only permissions on POSIX hosts.
 - [x] Implement a narrow read-only GitHub.com repository metadata provider behind an injected transport contract.
 - [x] Normalize repository identity, visibility, default branch, links, source timestamps, retrieval time and ETag provenance.
 - [x] Add provider contract tests for identity mismatch, untrusted input, upstream failures and timestamp validity.
