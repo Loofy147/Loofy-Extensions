@@ -2,21 +2,24 @@
 
 ## Purpose
 
-The `loofy_extensions` package makes a few architecture decisions executable and testable. It is deliberately an in-memory reference implementation, not a production service or extension loader.
+The `loofy_extensions` package makes architecture decisions executable and testable. It includes in-memory examples and an optional transactional SQLite adapter. Neither is, by itself, a production plugin runtime or identity/authorization service.
 
 ## What is included
 
 - `models.py`: immutable identifiers, extension record, lifecycle states, and audit-event value objects.
-- `validation.py`: JSON Schema validation used by both the CLI and registry.
-- `registry.py`: schema-backed registration, stable `(id, version)` identity, canonical manifest SHA-256, idempotent identical registration, and rejection of same-version content drift.
+- `validation.py`: JSON Schema validation used by the CLI, registry and built-in validation task.
+- `registry.py`: schema-backed registration, stable `(id, version)` identity, canonical manifest SHA-256, idempotent identical registration, and rejection of same-version content drift. An optional store can back registration and transitions.
 - `lifecycle.py`: explicit allowed transitions, actor/reason requirements, approval evidence for approval and high-impact enablement, and audit-event generation.
-- `policy.py`: exact-match, default-deny authorization for principal, extension version, capability, resource, and environment; unexpired grants only; extra approval evidence for high-impact permissions.
+- `policy.py`: exact-match, default-deny authorization for tenant, principal, extension version, capability, resource and environment; unexpired grants only; extra approval evidence for high-impact permissions.
+- `grants.py`: in-memory grant issuance/revocation reference with host-supplied membership and scope-authority callbacks.
+- `persistence.py`: versioned SQLite schema for extension records, lifecycle events, grants and grant events; state and corresponding audit events are committed atomically.
+- `providers/github_metadata.py` and `providers/github_gateway.py`: read-only GitHub metadata normalization and a host-side authorization/audit seam.
+- `tasks.py`: allowlisted, input-bounded `manifest.validate` task; no third-party code execution.
 
-## Quick example
+## Quick in-memory example
 
 ```python
 import json
-from pathlib import Path
 
 from loofy_extensions import ExtensionRegistry
 from loofy_extensions.validation import DEFAULT_EXAMPLES
@@ -24,12 +27,23 @@ from loofy_extensions.validation import DEFAULT_EXAMPLES
 registry = ExtensionRegistry()
 manifest_path = next(DEFAULT_EXAMPLES.rglob("extension.json"))
 manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-
 record = registry.register(manifest)
 print(record.key, record.state.value, record.manifest_digest)
 ```
 
-Run all tests and validate the sample:
+## Durable local example
+
+```python
+from loofy_extensions import ExtensionRegistry, SQLiteStore
+
+with SQLiteStore("var/loofy-extensions.sqlite3") as store:
+    registry = ExtensionRegistry(store=store)
+    record = registry.register(manifest)
+```
+
+Use the same `SQLiteStore` instance for registry operations and the grant authority when lifecycle/grant records must share one database and transaction domain. See [SQLite Persistence](sqlite-persistence.md) for migrations, restart behavior, guarantees and limits.
+
+## Run checks
 
 ```sh
 python -m pip install -r requirements-dev.txt
@@ -39,18 +53,19 @@ python scripts/validate_manifests.py
 
 ## Deliberate limitations
 
-- State and audit events live only in the process memory and disappear at restart.
-- The lock protects this Python process only; it is not a distributed transaction or database concurrency control.
-- The module does not contact GitHub, validate a publisher signature, run code, mint credentials, receive webhooks, persist approvals, or control the external API.
-- The grant objects are supplied by the caller. No grant-issuance workflow, durable revocation service, tenant-bound store, or identity provider exists yet.
-- Schema-valid data is not proof of publisher authenticity, license compatibility, artifact safety, or permission.
-- A capability decision must never be trusted by itself for a consequential production side effect. The receiving API/service must authorize the real actor, target resource, tenant and environment again.
+- Without a store, registry state and audit events live only in process memory.
+- SQLite state survives a process restart, but the reference database remains a local single-host store, not a distributed/high-availability system.
+- The store does not authenticate the publisher or actor, mint credentials, receive webhooks, persist approval verification, or control an external API.
+- Grant membership, grant-scope authority and caller context must come from trusted host services. Approval references are pointers, not cryptographically verified evidence.
+- The gateway's operation audit sink and task-runner history are still in-memory.
+- Schema-valid data is not proof of publisher authenticity, license compatibility, artifact safety or permission.
+- A capability decision must never be trusted by itself for a consequential production side effect. The receiving API/service must authorize the real actor, tenant, target resource and environment again.
 
 ## Safe extension path
 
-1. Keep the registry interface independent of persistence.
-2. Add a transactional storage adapter and migration tests.
+1. Keep registry validation and lifecycle rules independent of storage.
+2. Add new schema changes as ordered migrations and test upgrade, rollback and restart behavior.
 3. Bind approval evidence to the exact extension digest, principal, scope, action and expiry.
-4. Add operation-boundary policy checks and short-lived credentials.
-5. Add read-only provider contract tests before introducing write operations.
-6. Add durable audit, revocation, isolation, and recovery evidence before third-party code execution.
+4. Wire host identity and policy services to grant issuance/revocation and operation gateways.
+5. Replace in-memory operation audit and task history with a deliberate durable/auditable design.
+6. Add isolation and recovery evidence before third-party code execution.

@@ -22,11 +22,20 @@ from .tasks import (
     TaskRunConflictError,
     TaskRunner,
 )
+from .persistence import (
+    CURRENT_SCHEMA_VERSION,
+    ImmutableVersionConflictError,
+    SQLiteStore,
+    SchemaVersionError,
+    StorageClosedError,
+    StorageError,
+)
 
 __all__ = [
     "AuditEvent",
     "CapabilityGrant",
     "CapabilityRequest",
+    "CURRENT_SCHEMA_VERSION",
     "DuplicateExtensionVersionError",
     "ExtensionKey",
     "ExtensionRecord",
@@ -37,10 +46,15 @@ __all__ = [
     "GrantAuthority",
     "GrantConflictError",
     "GrantPolicyError",
+    "ImmutableVersionConflictError",
     "InMemoryGrantStore",
     "LifecycleTransitionError",
     "ManifestValidationError",
     "PolicyDecision",
+    "SQLiteStore",
+    "SchemaVersionError",
+    "StorageClosedError",
+    "StorageError",
     "TaskExecutionError",
     "TaskResult",
     "TaskRunConflictError",
