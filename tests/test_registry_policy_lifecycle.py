@@ -98,6 +98,7 @@ class CapabilityPolicyTests(unittest.TestCase):
         self.request = CapabilityRequest(
             key=self.record.key,
             principal_id="user:loofy",
+            tenant_id="tenant:loofy",
             capability="repository.contents.read",
             resource_id="repo:Loofy147/Loofy-Extensions",
             environment="development",
@@ -106,6 +107,7 @@ class CapabilityPolicyTests(unittest.TestCase):
             grant_id="grant-001",
             key=self.record.key,
             principal_id=self.request.principal_id,
+            tenant_id=self.request.tenant_id,
             capability=self.request.capability,
             resource_id=self.request.resource_id,
             environment=self.request.environment,
@@ -126,6 +128,12 @@ class CapabilityPolicyTests(unittest.TestCase):
     def test_resource_scope_is_exact(self) -> None:
         wrong_scope = replace(self.grant, resource_id="repo:someone/else")
         decision = authorize(self.record, self.request, (wrong_scope,), now=self.now)
+        self.assertFalse(decision.allowed)
+        self.assertEqual(decision.code, "no-matching-grant")
+
+    def test_tenant_scope_is_exact(self) -> None:
+        other_tenant = replace(self.grant, tenant_id="tenant:someone-else")
+        decision = authorize(self.record, self.request, (other_tenant,), now=self.now)
         self.assertFalse(decision.allowed)
         self.assertEqual(decision.code, "no-matching-grant")
 

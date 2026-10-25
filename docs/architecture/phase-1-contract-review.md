@@ -1,8 +1,6 @@
 # Phase 1 Contract Review
 
-Status: reference contract hardened; CI evidence is required before the phase is marked complete.
-
-This document describes the present in-memory contract. It does not imply production-ready persistence, identity verification, grant issuance, or extension execution.
+Status: reference contract hardened and verified in CI. This is a reference contract, not a production authorization, identity or persistence system.
 
 ## Lifecycle transition contract
 
@@ -40,9 +38,9 @@ A future approval service must bind evidence to at least the actor, extension ID
 
 ## Grant contract
 
-The current `CapabilityGrant` is a caller-supplied immutable value object. Authorization is default-deny and matches the extension version, principal, capability, resource, environment and unexpired grant exactly. Expiration is exclusive: a grant is denied when `expires_at <= now`. Naive timestamps are rejected.
+`CapabilityGrant` and `CapabilityRequest` require a tenant identifier. In-memory authorization is default-deny and matches tenant, principal, extension version, capability, resource, environment and unexpired grant exactly. Expiration is exclusive: a grant is denied when `expires_at <= now`. Naive timestamps are rejected.
 
-Not implemented yet: trusted grant issuance, grantor authorization, durable revocation, tenant binding, a durable identity store, approval verification, and distributed consistency. These are production gates, not implicit capabilities.
+Not implemented yet: trusted grant issuance, grantor authorization, durable revocation, verification of tenant membership, durable identity/policy state, approval verification, and distributed consistency. These are production gates, not implicit capabilities. The host-side operation gateway described in [Authorized Metadata Gateway](authorized-metadata-gateway.md) demonstrates the intended boundary with an in-memory audit sink.
 
 ## Identity and artifact provenance
 
@@ -57,12 +55,12 @@ A matching manifest digest does not prove the referenced artifact has not change
 
 ## Phase 1 verification checklist
 
-- [ ] State transition and update-recovery cases are covered by unit tests.
-- [ ] Actor, reason, and timestamp invariants are tested.
-- [ ] Capability risk policy version and representative high-/low-risk names are tested.
-- [ ] Exact-expiry behavior and timezone-awareness checks are tested.
-- [ ] Existing manifest schema validator and full unit suite pass in CI.
-- [ ] A reviewer confirms that approval references remain evidence pointers—not authorization by themselves.
+- [x] State transition and update-recovery cases are covered by unit tests.
+- [x] Actor, reason, and timestamp invariants are tested.
+- [x] Capability risk policy version and representative high-/low-risk names are tested.
+- [x] Exact-expiry behavior and timezone-awareness checks are tested.
+- [x] Existing manifest schema validator and full unit suite passed in CI.
+- [x] Approval references are documented as evidence pointers—not authorization by themselves.
 
 ## Deliberately deferred
 

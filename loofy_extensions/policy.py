@@ -14,6 +14,7 @@ class CapabilityGrant:
     grant_id: str
     key: ExtensionKey
     principal_id: str
+    tenant_id: str
     capability: str
     resource_id: str
     environment: str
@@ -25,6 +26,7 @@ class CapabilityGrant:
         for field_name in (
             "grant_id",
             "principal_id",
+            "tenant_id",
             "capability",
             "resource_id",
             "environment",
@@ -40,6 +42,7 @@ class CapabilityGrant:
 class CapabilityRequest:
     key: ExtensionKey
     principal_id: str
+    tenant_id: str
     capability: str
     resource_id: str
     environment: str
@@ -62,9 +65,12 @@ def authorize(
 ) -> PolicyDecision:
     """Authorize only exact, unexpired grants for an enabled extension version.
 
-    Wildcards and implicit grants are deliberately unsupported in this reference
-    implementation. A production policy service must also bind grants to a tenant
-    and enforce authorization again at the external operation boundary.
+    A valid grant must match the tenant, principal, extension version, capability,
+    resource and environment. Wildcards and implicit grants are unsupported.
+    Approval references remain opaque pointers, not verified authorization
+    artifacts. A production policy service must re-authorize at the external
+    operation boundary and obtain grants from a trusted issuance/revocation
+    service.
     """
     if request.key != record.key:
         return PolicyDecision(False, "extension-version-mismatch", "Request version does not match record.")
@@ -82,12 +88,13 @@ def authorize(
         for grant in grants
         if grant.key == request.key
         and grant.principal_id == request.principal_id
+        and grant.tenant_id == request.tenant_id
         and grant.capability == request.capability
         and grant.resource_id == request.resource_id
         and grant.environment == request.environment
     ]
     if not matching:
-        return PolicyDecision(False, "no-matching-grant", "No grant matches the principal, capability, resource and environment.")
+        return PolicyDecision(False, "no-matching-grant", "No grant matches the tenant, principal, capability, resource and environment.")
 
     matching.sort(key=lambda grant: (grant.expires_at, grant.grant_id))
     for grant in matching:
@@ -95,6 +102,6 @@ def authorize(
             continue
         if is_high_impact_capability(request.capability) and not grant.approval_ref:
             continue
-        return PolicyDecision(True, "authorized", "A valid scoped grant matched.", grant.grant_id)
+        return PolicyDecision(True, "authorized", "A valid tenant-scoped grant matched.", grant.grant_id)
 
     return PolicyDecision(False, "expired-or-unapproved-grant", "Matching grants are expired or lack required approval evidence.")
