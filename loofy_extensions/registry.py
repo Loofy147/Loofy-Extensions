@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from pathlib import Path
 from threading import RLock
 from typing import Any, Mapping
@@ -111,8 +112,14 @@ class ExtensionRegistry:
         actor: str,
         reason: str,
         approval_ref: str | None = None,
+        occurred_at: datetime | None = None,
     ) -> ExtensionRecord:
-        """Apply one allowed transition and append an immutable audit event."""
+        """Apply one allowed transition and append an immutable audit event.
+
+        `occurred_at` is optional so tests and controlled callers can supply a
+        deterministic timestamp. Production callers should normally omit it so
+        the UTC clock is captured by the lifecycle function.
+        """
         key = ExtensionKey(extension_id, version)
         with self._lock:
             try:
@@ -125,6 +132,7 @@ class ExtensionRegistry:
                 actor=actor,
                 reason=reason,
                 approval_ref=approval_ref,
+                occurred_at=occurred_at,
             )
             self._records[key] = updated
             self._audit_events.append(event)
