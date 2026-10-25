@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from threading import RLock
 from time import perf_counter
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Protocol
 
 from .validation import DEFAULT_SCHEMA, load_schema, validate_manifest_data
 
@@ -76,6 +76,20 @@ class TaskResult:
     duration_ms: float
 
 
+class TaskResultStore(Protocol):
+    """Persistence contract for durable task results and run-ID idempotency."""
+
+    @property
+    def task_run_results(self) -> tuple[TaskResult, ...]:
+        """Return completed results in stable run-ID order."""
+
+    def get_task_run(self, run_id: str) -> tuple[str, TaskResult] | None:
+        """Return stored request digest and result for a run ID, if present."""
+
+    def save_task_run(self, request_digest: str, result: TaskResult) -> TaskResult:
+        """Atomically create or return a prior result; reject run-ID conflicts."""
+
+
 def _canonical_json(value: Any) -> bytes:
     try:
         return json.dumps(
@@ -105,12 +119,15 @@ def _aware_utc(value: datetime, field: str) -> datetime:
 
 
 class TaskRunner:
-    """Execute only allowlisted, host-owned tasks and retain in-memory run evidence.
+    """Execute only allowlisted, host-owned tasks and retain run evidence.
 
     Identical retries using the same run ID and envelope return the original
-    result. Reusing a run ID for different context or content is rejected.
-    Successful invocation of the validator may produce `valid=False`; that is
-    a completed validation task, not a task-runner failure.
+    result. Reusing a run ID for different context or content is rejected. An
+    optional TaskResultStore provides cross-restart idempotency and durable
+    results; the default remains process-local for lightweight tests.
+
+    Successful invocation of the validator may produce valid=False; that is a
+    completed validation task, not a task-runner failure.
 
     The input-size ceiling bounds the only currently supported task's workload.
     This class is not a sandbox, a process supervisor or a general execution
@@ -125,6 +142,7 @@ class TaskRunner:
         schema_path=DEFAULT_SCHEMA,
         clock: Callable[[], datetime] | None = None,
         monotonic: Callable[[], float] | None = None,
+        store: TaskResultStore | None = None,
     ) -> None:
         if isinstance(max_input_bytes, bool) or not isinstance(max_input_bytes, int) or max_input_bytes < 1:
             raise ValueError("max_input_bytes must be a positive integer")
@@ -132,6 +150,7 @@ class TaskRunner:
         self._schema = load_schema(schema_path)
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._monotonic = monotonic or perf_counter
+        self._store = store
         self._results: dict[str, tuple[str, TaskResult]] = {}
         self._lock = RLock()
 
@@ -141,7 +160,9 @@ class TaskRunner:
 
     @property
     def history(self) -> tuple[TaskResult, ...]:
-        """Return recorded results in run-ID order; process-local and non-durable."""
+        """Return recorded results in run-ID order."""
+        if self._store is not None:
+            return self._store.task_run_results
         with self._lock:
             return tuple(self._results[run_id][1] for run_id in sorted(self._results))
 
@@ -184,14 +205,23 @@ class TaskRunner:
         request_digest = "sha256:" + hashlib.sha256(request_bytes).hexdigest()
         input_digest = "sha256:" + hashlib.sha256(manifest_bytes).hexdigest()
 
-        # Serialize same-process runs: duplicate IDs cannot race into duplicate work.
+        # The SQLite store provides the cross-process final idempotency gate. The
+        # local lock avoids duplicate work in the common same-runner case.
         with self._lock:
-            existing = self._results.get(run_id)
-            if existing is not None:
-                prior_request_digest, prior_result = existing
-                if prior_request_digest != request_digest:
-                    raise TaskRunConflictError(run_id)
-                return prior_result
+            if self._store is not None:
+                existing_durable = self._store.get_task_run(run_id)
+                if existing_durable is not None:
+                    prior_digest, prior_result = existing_durable
+                    if prior_digest != request_digest:
+                        raise TaskRunConflictError(run_id)
+                    return prior_result
+            else:
+                existing = self._results.get(run_id)
+                if existing is not None:
+                    prior_request_digest, prior_result = existing
+                    if prior_request_digest != request_digest:
+                        raise TaskRunConflictError(run_id)
+                    return prior_result
 
             started_at = _aware_utc(self._clock(), "clock")
             start_tick = self._monotonic()
@@ -229,5 +259,9 @@ class TaskRunner:
                 completed_at=completed_at,
                 duration_ms=round(elapsed * 1000, 3),
             )
+            if self._store is not None:
+                # If another process raced this identical run ID, the store returns
+                # the first committed result; different content raises a conflict.
+                return self._store.save_task_run(request_digest, result)
             self._results[run_id] = (request_digest, result)
             return result
