@@ -171,6 +171,7 @@ class AuthorizedTaskRunner:
             or not isinstance(decision.code, str)
             or not decision.code.strip()
             or len(decision.code.strip()) > 128
+            or any(ord(character) < 32 for character in decision.code)
             or not isinstance(decision.message, str)
         ):
             self._emit(
