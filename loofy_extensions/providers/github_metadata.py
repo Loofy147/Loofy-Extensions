@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Protocol
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 
 class ProviderError(RuntimeError):
@@ -93,9 +93,9 @@ def _required_string(payload: Mapping[str, Any], field: str) -> str:
 class GitHubRepositoryMetadataProvider:
     """Retrieve and normalize metadata for one repository; never writes to GitHub.
 
-    Authentication, host allowlists, timeouts, TLS and transport-level retries
-    belong to the injected transport. Credentials must not be stored in extension
-    manifests or returned metadata.
+    The current adapter targets GitHub.com only. Authentication, timeouts, TLS
+    and transport-level retries belong to the injected transport. Credentials
+    must not be stored in extension manifests or returned metadata.
     """
 
     provider_id = "github"
@@ -109,8 +109,18 @@ class GitHubRepositoryMetadataProvider:
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         base = api_base_url.rstrip("/")
-        if not base.startswith("https://"):
-            raise ValueError("api_base_url must use HTTPS")
+        parsed_base = urlsplit(base)
+        if (
+            parsed_base.scheme != "https"
+            or parsed_base.hostname != "api.github.com"
+            or parsed_base.username is not None
+            or parsed_base.password is not None
+            or parsed_base.port is not None
+            or parsed_base.path not in ("",)
+            or parsed_base.query
+            or parsed_base.fragment
+        ):
+            raise ValueError("api_base_url must be the canonical https://api.github.com origin")
         self._transport = transport
         self._api_base_url = base
         self._clock = clock or (lambda: datetime.now(timezone.utc))
@@ -140,11 +150,27 @@ class GitHubRepositoryMetadataProvider:
         if isinstance(raw_id, bool) or not isinstance(raw_id, (int, str)) or not str(raw_id).strip():
             raise ProviderError("invalid-payload", "GitHub response field 'id' must be an integer or non-empty string.")
         full_name = _required_string(payload, "full_name")
+        if full_name.casefold() != f"{owner}/{repository}".casefold():
+            raise ProviderError("invalid-payload", "GitHub response repository identity does not match the requested resource.")
         default_branch = _required_string(payload, "default_branch")
         html_url = _required_string(payload, "html_url")
         api_url = _required_string(payload, "url")
-        if not html_url.startswith("https://github.com/") or not api_url.startswith("https://"):
-            raise ProviderError("invalid-payload", "GitHub repository links must use HTTPS and trusted GitHub hosts.")
+        html_link = urlsplit(html_url)
+        api_link = urlsplit(api_url)
+        expected_path = f"/repos/{quote(owner, safe='')}/{quote(repository, safe='')}"
+        if (
+            html_link.scheme != "https"
+            or html_link.hostname != "github.com"
+            or html_link.path.rstrip("/") != f"/{quote(owner, safe='')}/{quote(repository, safe='')}"
+            or html_link.query
+            or html_link.fragment
+            or api_link.scheme != "https"
+            or api_link.hostname != "api.github.com"
+            or api_link.path.rstrip("/") != expected_path
+            or api_link.query
+            or api_link.fragment
+        ):
+            raise ProviderError("invalid-payload", "GitHub repository links do not match the requested trusted resource.")
         if not isinstance(payload.get("private"), bool):
             raise ProviderError("invalid-payload", "GitHub response field 'private' must be a boolean.")
         if not isinstance(payload.get("archived"), bool):
