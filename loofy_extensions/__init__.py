@@ -33,6 +33,7 @@ from .persistence import (
 )
 from .task_gateway import (
     AuthorizedTaskRunner,
+    CapabilityTaskAuthorizer,
     TaskAuthorizationContextUnavailable,
     TaskAuthorizationDecision,
     TaskAuthorizationError,
@@ -45,6 +46,7 @@ __all__ = [
     "AuthorizedTaskRunner",
     "CapabilityGrant",
     "CapabilityRequest",
+    "CapabilityTaskAuthorizer",
     "CURRENT_SCHEMA_VERSION",
     "DuplicateExtensionVersionError",
     "ExtensionKey",

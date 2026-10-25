@@ -15,7 +15,7 @@ The `loofy_extensions` package makes architecture decisions executable and testa
 - `persistence.py`: versioned SQLite schema v3 for extension records, lifecycle events, grants, grant events, gateway operation audit events, and optional task-run results. State and paired lifecycle/grant audit events are committed atomically; task results and their request fingerprints are persisted transactionally.
 - `providers/github_metadata.py` and `providers/github_gateway.py`: read-only GitHub metadata normalization and a host-side authorization/audit seam.
 - `tasks.py` and `validation_worker.py`: allowlisted `manifest.validate` task, with default in-process validation and an opt-in subprocess worker with wall-clock/size bounds plus POSIX CPU/address-space/core limits. No third-party code execution. Task results can be held in memory or persisted through the SQLite store.
-- `task_gateway.py`: host-side `AuthorizedTaskRunner` wrapper; replaces envelope attribution with trusted caller context, invokes an injected authorizer, and emits correlated audit events before/after the task.
+- `task_gateway.py`: host-side `AuthorizedTaskRunner` wrapper plus `CapabilityTaskAuthorizer`; replaces envelope attribution with trusted caller context, maps `manifest.validate` to `task.manifest.validate`, evaluates existing tenant-scoped grants, and emits correlated audit events before/after the task.
 
 ## Quick in-memory example
 
@@ -44,7 +44,7 @@ with SQLiteStore("var/loofy-extensions.sqlite3") as store:
     result = runner.run(envelope)
 ~~~
 
-For user-facing execution, wrap the runner with `AuthorizedTaskRunner`, and supply a `TaskCallerContext` derived from trusted host authentication and a host-owned `TaskAuthorizer`. Use the same `SQLiteStore` instance for registry operations, grant authority, gateway audit events, and durable task results when they need to share the same database. See [SQLite Persistence](sqlite-persistence.md) and [Authorized Task Runner](authorized-task-runner.md).
+For user-facing execution, wrap the runner with `AuthorizedTaskRunner` and construct `TaskCallerContext` from trusted host authentication. The package's `CapabilityTaskAuthorizer` bridges the fixed task-to-capability mapping to the existing grant evaluator, but its record/grant loaders must be bound to authoritative state, and grant issuance still requires host verification callbacks. Use the same `SQLiteStore` for registry operations, grant authority, gateway audit events, and durable task results when they need to share one database. See [SQLite Persistence](sqlite-persistence.md) and [Authorized Task Runner](authorized-task-runner.md).
 
 ## Run checks
 

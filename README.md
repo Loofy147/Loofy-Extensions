@@ -20,6 +20,7 @@ A governed foundation for discovering, describing, validating, and eventually ex
 - An allowlisted `manifest.validate` task runner with typed execution envelopes, input-size limits, content digests, attribution, run-ID idempotency, and no third-party code execution.
 - Optional isolated subprocess validation with a wall-clock deadline, POSIX CPU/address-space/core-file limits, and bounded JSON request/response messages.
 - An optional task authorization wrapper that derives attribution from trusted host caller context and fails closed when policy lookup or the pre-run audit append fails.
+- A capability-policy adapter that maps the allowlisted `manifest.validate` task to `task.manifest.validate` and evaluates it using the existing tenant-scoped grant policy.
 - Optional SQLite-backed task results with persisted request fingerprints, so identical run IDs remain idempotent across restarts and conflicting reuse is rejected.
 
 ## Important security boundary
@@ -70,7 +71,7 @@ The same store can be passed as the grant store to `GrantAuthority` and as the o
 
 ## Package core
 
-The package offers both the original in-memory reference registry and an optional local SQLite store. The GitHub metadata provider is read-only and does not acquire credentials. The gateway and grant/task authorization wrappers require trusted host callbacks; persistence does not authenticate a caller or verify approval evidence. On POSIX hosts, SQLite database and active sidecar files are restricted to owner-only permissions; this is not encryption at rest or a substitute for backup and directory access policy. The built-in task runner loads no third-party code and is input-bounded. Opt-in isolated validation runs the built-in schema check in a separate process with a wall-clock deadline and POSIX CPU/address-space limits; this is not a network sandbox or general-purpose plugin sandbox. Applications exposed to users should use `AuthorizedTaskRunner` or an equivalent operation boundary rather than exposing the bare task runner. Applications exposed to users should use `AuthorizedTaskRunner` or an equivalent operation boundary rather than exposing the bare task runner.
+The package offers both the original in-memory reference registry and an optional local SQLite store. The GitHub metadata provider is read-only and does not acquire credentials. The gateway and grant/task authorization wrappers require trusted host callbacks; persistence does not authenticate a caller or verify approval evidence. On POSIX hosts, SQLite database and active sidecar files are restricted to owner-only permissions; this is not encryption at rest or a substitute for backup and directory access policy. The built-in task runner loads no third-party code and is input-bounded. Opt-in isolated validation runs the built-in schema check in a separate process with a wall-clock deadline and POSIX CPU/address-space limits; this is not a network sandbox or general-purpose plugin sandbox. Applications exposed to users should use `AuthorizedTaskRunner` or an equivalent operation boundary rather than exposing the bare task runner.
 
 ## Documentation
 

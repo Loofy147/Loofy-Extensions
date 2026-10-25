@@ -9,8 +9,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Callable, Protocol
+from typing import Callable, Protocol, Sequence
 
+from .models import ExtensionKey, ExtensionRecord
+from .policy import CapabilityGrant, CapabilityRequest, PolicyDecision, authorize as authorize_capability
 from .providers.github_gateway import OperationAuditEvent, OperationAuditSink
 from .tasks import ExecutionEnvelope, TaskExecutionError, TaskResult, TaskRunner
 
@@ -75,6 +77,82 @@ class TaskAuthorizer(Protocol):
         environment: str,
     ) -> TaskAuthorizationDecision:
         """Return an explicit allow or deny decision."""
+
+
+class CapabilityTaskAuthorizer:
+    """Bridge task requests to the existing tenant-scoped capability policy.
+
+    The injected record and grant loaders must provide current authoritative
+    state. Caller identity is provided by AuthorizedTaskRunner after the host
+    authentication layer has constructed TaskCallerContext; this adapter does
+    not authenticate users or issue grants.
+    """
+
+    _TASK_CAPABILITIES = {
+        "manifest.validate": "task.manifest.validate",
+    }
+
+    def __init__(
+        self,
+        *,
+        extension_key: ExtensionKey,
+        record_loader: Callable[[ExtensionKey], ExtensionRecord],
+        grants_loader: Callable[[], Sequence[CapabilityGrant]],
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        if not isinstance(extension_key, ExtensionKey):
+            raise ValueError("extension_key must be an ExtensionKey")
+        self._extension_key = extension_key
+        self._record_loader = record_loader
+        self._grants_loader = grants_loader
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
+
+    def authorize(
+        self,
+        *,
+        principal_id: str,
+        tenant_id: str,
+        task_id: str,
+        resource_id: str,
+        environment: str,
+    ) -> TaskAuthorizationDecision:
+        capability = self._TASK_CAPABILITIES.get(task_id)
+        if capability is None:
+            return TaskAuthorizationDecision(
+                False,
+                "unsupported-task",
+                "No capability mapping exists for the requested task.",
+            )
+
+        # Loader errors propagate to AuthorizedTaskRunner, which records a
+        # stable fail-closed authorization-context-unavailable outcome.
+        record = self._record_loader(self._extension_key)
+        if not isinstance(record, ExtensionRecord) or record.key != self._extension_key:
+            raise ValueError("The task extension record is unavailable or mismatched.")
+        grants = tuple(self._grants_loader())
+        now = self._clock()
+        if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError("Task authorization clock must return a timezone-aware datetime.")
+
+        request = CapabilityRequest(
+            key=self._extension_key,
+            principal_id=principal_id,
+            tenant_id=tenant_id,
+            capability=capability,
+            resource_id=resource_id,
+            environment=environment,
+        )
+        decision: PolicyDecision = authorize_capability(
+            record,
+            request,
+            grants,
+            now=now.astimezone(timezone.utc),
+        )
+        return TaskAuthorizationDecision(
+            allowed=decision.allowed,
+            code=decision.code,
+            message=decision.message,
+        )
 
 
 class AuthorizedTaskRunner:
