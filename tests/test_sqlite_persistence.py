@@ -348,6 +348,10 @@ class SQLitePersistenceTests(unittest.TestCase):
         self.store.close()
         raw = sqlite3.connect(self.database_path)
         raw.execute(
+            "DELETE FROM schema_migrations WHERE version < ?",
+            (CURRENT_SCHEMA_VERSION,),
+        )
+        raw.execute(
             "UPDATE schema_migrations SET version = ?",
             (CURRENT_SCHEMA_VERSION + 1,),
         )
