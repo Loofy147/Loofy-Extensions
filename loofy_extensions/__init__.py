@@ -31,9 +31,18 @@ from .persistence import (
     StorageClosedError,
     StorageError,
 )
+from .task_gateway import (
+    AuthorizedTaskRunner,
+    TaskAuthorizationContextUnavailable,
+    TaskAuthorizationDecision,
+    TaskAuthorizationError,
+    TaskAuthorizer,
+    TaskCallerContext,
+)
 
 __all__ = [
     "AuditEvent",
+    "AuthorizedTaskRunner",
     "CapabilityGrant",
     "CapabilityRequest",
     "CURRENT_SCHEMA_VERSION",
@@ -56,6 +65,11 @@ __all__ = [
     "SchemaVersionError",
     "StorageClosedError",
     "StorageError",
+    "TaskAuthorizationContextUnavailable",
+    "TaskAuthorizationDecision",
+    "TaskAuthorizationError",
+    "TaskAuthorizer",
+    "TaskCallerContext",
     "TaskExecutionError",
     "TaskResult",
     "TaskResultStore",
