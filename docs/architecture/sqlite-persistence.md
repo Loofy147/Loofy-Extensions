@@ -35,14 +35,15 @@ Migration 3 creates:
 - `task_runs`: run ID, canonical request digest, task and actor/tenant/resource/environment context, target extension version where present, outcome, validation errors, input/output digests, timestamps, and duration.
 - Indexes for tenant/time queries and target extension lookup.
 
-The v1→v3 and v2→v3 migration paths are tested. Do not edit applied migrations in place; future schema changes must add a new ordered migration and test previous-schema upgrades and newer-schema rejection.
+The v1→v3 and v2→v3 migration paths are tested. Migration 4 creates `audit_chain`, a single ordered SHA-256 hash chain over lifecycle, grant, and operation audit events, and backfills existing audit rows in deterministic timestamp/source order. New audit rows and their chain entries are committed in the same SQLite transaction. The verifier checks chain sequence, previous/event hashes, source references, and equality/counts against the underlying audit tables. Do not edit applied migrations in place; future schema changes must add a new ordered migration and test previous-schema upgrades and newer-schema rejection.
 
 ## Transaction guarantees
 
 - Lifecycle transition: load current record, validate the transition, update state/timestamp, and insert its lifecycle event in one `BEGIN IMMEDIATE` transaction.
 - Grant issuance: insert the immutable grant and issued event in one transaction. Identical retry is idempotent; reusing a grant ID with different content is a conflict.
 - Grant revocation: set `revoked_at` and insert the revoked event in one transaction. Repeated revocation is rejected.
-- Operation audit: each event is appended in its own transaction. The gateway writes the authorization decision before making the outbound request; if that insert fails, the provider is not called. Completion/failure events use the same correlation ID.
+- Operation audit: each event and its hash-chain entry are appended in one transaction. The gateway writes the authorization decision before making the outbound request; if that insert fails, the provider is not called. Completion/failure events use the same correlation ID.
+- Audit integrity: `verify_audit_chain()` detects modified/deleted/reordered chain rows and missing/altered audit source rows. It is a local integrity check, not a signature or an independent trust anchor.
 - Task run result: the completed result and canonical request fingerprint are written in one transaction. A repeated run ID with the same fingerprint returns the first saved result; changed request content or scope produces a conflict even after the process restarts.
 - Audit failure: lifecycle/grant state changes roll back when their paired audit-row insertion fails. Operation-audit append failures abort that append. Task results are not committed if result insertion fails.
 - Concurrency: SQLite's writer lock and busy timeout serialize database writers. A competing identical task run may perform redundant pure validation work, but the final transaction returns the first result and prevents duplicate persisted identities. This is not a distributed task queue.
@@ -65,7 +66,7 @@ Use the same live store instance for registry operations, grant issuance/revocat
 
 - Suitable as an embedded/local reference and single-host starting point; no multi-node coordination or high-availability guarantee is claimed.
 - Caller identity, tenant membership, grantor authority, and approval verification must come from trusted host services.
-- Operation events are persisted, but access controls, tamper-evidence, retention, backup/restore, and production monitoring still need to be defined.
+- The local hash chain detects accidental or partial tampering, but a privileged actor able to rewrite the whole database can recompute it. Production still needs external immutable checkpoints or an independent append-only audit destination, audit access controls, retention, backup/restore, and monitoring.
 - Grant and lifecycle event transaction guarantees apply within this database. Sending events to an external audit system requires an outbox or another explicit consistency design.
 - Task execution results are stored only after task completion; this is not a queue, crash-recovery lease, or exactly-once execution engine. Current validation is pure/read-only, so retry is safe.
 - This adapter does not store secrets, GitHub tokens, provider payloads, or task input manifests. It retains request fingerprints, result metadata, and validation error strings.
