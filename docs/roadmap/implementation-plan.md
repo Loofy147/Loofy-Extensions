@@ -37,13 +37,14 @@ Exit gate: the reference contract is testable without external credentials or wr
 - [x] Add a host-side metadata operation gateway that authorizes before outbound reads and fails closed if the pre-call audit append fails.
 - [x] Persist operation audit events in SQLite and add correlation IDs across authorization and outcome events.
 - [ ] Wire caller context and policy loaders to the actual host authentication, current grant store, and extension registry.
-- [ ] Add production audit access controls, tamper-evidence/retention policy, and operational monitoring.
+- [x] Add a local SHA-256 audit chain across lifecycle, grant, and operation events; verify chain links and reconcile chained payloads against source audit rows.
+- [ ] Add independent immutable checkpoints/external append-only audit delivery, production audit access controls, retention policy, and operational monitoring.
 - [x] Add a grant issuance/revocation reference with host-supplied tenant-membership and grant-scope checks, future-expiry validation, immutable IDs, and audit events.
 - [x] Persist grant state and corresponding grant audit events atomically.
 - [x] Test grant issuance denial paths, issuer membership, high-impact approval presence, revocation, repeated revocation, and immutable grant identity.
 - [ ] Wire membership, approval verification and grant-scope callbacks to authoritative host identity and policy services.
 - [x] Demonstrate issuance → authorized read → revoke → denied read and extension disable → denied read using a fake transport; no external GitHub operations are performed.
-- [x] Test process-style restart, schema v1→v3 migrations, future-schema rejection, and rollback when lifecycle, grant, or operation-audit insertion fails.
+- [x] Test process-style restart, schema migrations, future-schema rejection, and rollback when lifecycle, grant, or operation-audit insertion fails.
 
 Exit gate: the local reference adapter persists state atomically and the metadata gateway can record auditable, correlated decisions. Production use still requires authoritative caller identity, membership/approval verification, protected audit access, and production operational controls.
 

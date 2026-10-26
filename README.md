@@ -2,7 +2,7 @@
 
 A governed foundation for discovering, describing, validating, and eventually executing extensions across developer tools and connected services.
 
-> **Current status:** versioned manifests, an optional transactional SQLite registry/grant store, tenant-scoped grant lifecycle, a read-only GitHub repository metadata provider, host-side authorization gateways, durable operation-audit storage, an allowlisted manifest-validation task runner with optional isolated worker execution, and durable task results. These are reference implementations, not a production plugin runtime. Production identity/approval verification, hardened audit access controls, secret storage, and sandboxed third-party execution remain out of scope.
+> **Current status:** versioned manifests, an optional transactional SQLite registry/grant store, tenant-scoped grant lifecycle, a read-only GitHub repository metadata provider, host-side authorization gateways, durable operation-audit storage with a locally verifiable hash chain, an allowlisted manifest-validation task runner with optional isolated worker execution, and durable task results. These are reference implementations, not a production plugin runtime. Production identity/approval verification, hardened audit access controls, secret storage, and sandboxed third-party execution remain out of scope.
 
 ## What this repository establishes
 
@@ -14,9 +14,10 @@ A governed foundation for discovering, describing, validating, and eventually ex
 - A read-only GitHub repository metadata provider behind a host-owned transport contract.
 - A host-side gateway that authorizes and audits metadata reads before calling the provider.
 - A grant authority with injectable tenant-membership and grant-scope checks, expiry validation, immutable grant IDs, revocation state, and grant lifecycle audit events.
-- A transactional SQLite store for extension records, lifecycle events, grants, grant events, operation-level gateway audit records, and optional task-run results.
+- A transactional SQLite store for extension records, lifecycle events, grants, grant events, operation-level gateway audit records, a hash-chained audit integrity ledger, and optional task-run results.
 - Owner-only SQLite database/WAL/SHM permissions on POSIX hosts.
 - Correlation IDs that link metadata/task authorization and outcome events.
+- `SQLiteStore.verify_audit_chain()` checks the local hash chain and reconciles it against lifecycle, grant, and operation audit rows; production still needs independent immutable checkpoints.
 - An allowlisted `manifest.validate` task runner with typed execution envelopes, input-size limits, content digests, attribution, run-ID idempotency, and no third-party code execution.
 - Optional isolated subprocess validation with a wall-clock deadline, POSIX CPU/address-space/core-file limits, and bounded JSON request/response messages.
 - An optional task authorization wrapper that derives attribution from trusted host caller context and fails closed when policy lookup or the pre-run audit append fails.
