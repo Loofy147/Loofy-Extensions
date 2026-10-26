@@ -29,7 +29,7 @@ from .models import AuditEvent, ExtensionKey, ExtensionRecord, ExtensionState
 from .policy import CapabilityGrant
 
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 
 class StorageError(RuntimeError):
@@ -225,7 +225,7 @@ class SQLiteStore:
                 raise ValueError(f"operation audit field {field_name} must be non-empty")
         occurred_at_db = _timestamp_to_db(event.occurred_at)
         with self._transaction() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 """
                 INSERT INTO operation_audit_events (
                     event_type, extension_id, extension_version, manifest_digest,
@@ -250,6 +250,14 @@ class SQLiteStore:
                     event.correlation_id,
                 ),
             )
+            self._append_audit_chain(connection, "operation_audit_events", int(cursor.lastrowid), {
+                "event_type": event.event_type, "extension_id": event.extension_id,
+                "extension_version": event.extension_version, "manifest_digest": event.manifest_digest,
+                "principal_id": event.principal_id, "tenant_id": event.tenant_id,
+                "capability": event.capability, "resource_id": event.resource_id,
+                "environment": event.environment, "outcome": event.outcome,
+                "decision_code": event.decision_code, "occurred_at": occurred_at_db,
+                "source_id": event.source_id, "correlation_id": event.correlation_id}, event.occurred_at)
 
     @property
     def task_run_results(self) -> tuple[TaskResult, ...]:
@@ -424,6 +432,8 @@ class SQLiteStore:
                         self._migration_2(connection)
                     elif next_version == 3:
                         self._migration_3(connection)
+                    elif next_version == 4:
+                        self._migration_4(connection)
                     else:
                         raise SchemaVersionError(
                             f"No migration path is defined to schema version {next_version}."
@@ -585,6 +595,34 @@ class SQLiteStore:
         connection.execute(
             "CREATE INDEX idx_task_runs_target ON task_runs(target_extension_id, target_extension_version)"
         )
+
+
+    @staticmethod
+    def _migration_4(connection: sqlite3.Connection) -> None:
+        """Add a tamper-evident hash chain over lifecycle, grant and operation events."""
+        connection.execute("""CREATE TABLE audit_chain (
+            sequence_id INTEGER PRIMARY KEY AUTOINCREMENT, source_table TEXT NOT NULL,
+            source_event_id INTEGER NOT NULL, occurred_at TEXT NOT NULL, payload_json TEXT NOT NULL,
+            previous_hash TEXT NOT NULL, event_hash TEXT NOT NULL UNIQUE,
+            UNIQUE (source_table, source_event_id))""")
+        existing_events = []
+        for table in ("lifecycle_audit_events", "grant_audit_events", "operation_audit_events"):
+            for row in connection.execute(f"SELECT * FROM {table} ORDER BY event_id").fetchall():
+                item = dict(row)
+                event_id = int(item.pop("event_id"))
+                occurred_at = str(item["occurred_at"])
+                existing_events.append((table, event_id, occurred_at,
+                    {"source_table": table, "source_event_id": event_id, "event": item}))
+        existing_events.sort(key=lambda item: (item[2], item[0], item[1]))
+        previous_hash = ""
+        for table, event_id, occurred_at, payload in existing_events:
+            payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+            event_hash = SQLiteStore._audit_chain_hash(previous_hash, payload_json)
+            connection.execute("""INSERT INTO audit_chain
+                (source_table, source_event_id, occurred_at, payload_json, previous_hash, event_hash)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                (table, event_id, occurred_at, payload_json, previous_hash, event_hash))
+            previous_hash = event_hash
 
     def _restrict_database_files(self) -> None:
         """Restrict the SQLite database and sidecars to the owner on POSIX hosts.
@@ -798,6 +836,13 @@ class SQLiteStore:
                 ),
             )
             self._insert_lifecycle_event(connection, event)
+            row = connection.execute("SELECT event_id FROM lifecycle_audit_events WHERE extension_id=? AND version=? ORDER BY event_id DESC LIMIT 1",
+                (event.key.extension_id, event.key.version)).fetchone()
+            self._append_audit_chain(connection, "lifecycle_audit_events", int(row["event_id"]), {
+                "extension_id": event.key.extension_id, "version": event.key.version,
+                "from_state": event.from_state.value, "to_state": event.to_state.value,
+                "actor": event.actor, "reason": event.reason, "approval_ref": event.approval_ref,
+                "occurred_at": _timestamp_to_db(event.occurred_at)}, event.occurred_at)
         return updated
 
     @staticmethod
@@ -917,9 +962,11 @@ class SQLiteStore:
                     _timestamp_to_db(occurred_at),
                 ),
             )
-            self._insert_grant_event(
-                connection, "issued", grant, grant.granted_by, reason, occurred_at
-            )
+            self._insert_grant_event(connection, "issued", grant, grant.granted_by, reason, occurred_at)
+            row = connection.execute("SELECT event_id FROM grant_audit_events WHERE grant_id=? ORDER BY event_id DESC LIMIT 1",
+                (grant.grant_id,)).fetchone()
+            self._append_audit_chain(connection, "grant_audit_events", int(row["event_id"]),
+                self._grant_chain_payload("issued", grant, grant.granted_by, reason, occurred_at), occurred_at)
         return grant
 
     def revoke(
@@ -950,9 +997,11 @@ class SQLiteStore:
                 "UPDATE capability_grants SET revoked_at=? WHERE grant_id=? AND revoked_at IS NULL",
                 (occurred_at_db, grant_id),
             )
-            self._insert_grant_event(
-                connection, "revoked", grant, actor_id, reason, occurred_at
-            )
+            self._insert_grant_event(connection, "revoked", grant, actor_id, reason, occurred_at)
+            row = connection.execute("SELECT event_id FROM grant_audit_events WHERE grant_id=? ORDER BY event_id DESC LIMIT 1",
+                (grant_id,)).fetchone()
+            self._append_audit_chain(connection, "grant_audit_events", int(row["event_id"]),
+                self._grant_chain_payload("revoked", grant, actor_id, reason, occurred_at), occurred_at)
         return grant
 
     @staticmethod
@@ -987,6 +1036,65 @@ class SQLiteStore:
                 _timestamp_to_db(occurred_at),
             ),
         )
+
+
+    @staticmethod
+    def _audit_chain_hash(previous_hash: str, payload_json: str) -> str:
+        import hashlib
+        canonical = json.dumps({"previous_hash": previous_hash, "payload_json": payload_json},
+            sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
+        return "sha256:" + hashlib.sha256(canonical).hexdigest()
+
+    @staticmethod
+    def _grant_chain_payload(event_type: str, grant: CapabilityGrant, actor_id: str,
+                             reason: str, occurred_at: datetime) -> dict[str, object]:
+        return {"event_type": event_type, "grant_id": grant.grant_id, "actor_id": actor_id.strip(),
+            "principal_id": grant.principal_id, "tenant_id": grant.tenant_id,
+            "extension_id": grant.key.extension_id, "extension_version": grant.key.version,
+            "capability": grant.capability, "resource_id": grant.resource_id,
+            "environment": grant.environment, "reason": reason.strip(),
+            "occurred_at": _timestamp_to_db(occurred_at)}
+
+    @staticmethod
+    def _append_audit_chain(connection: sqlite3.Connection, source_table: str,
+                            source_event_id: int, event: dict[str, object],
+                            occurred_at: datetime) -> None:
+        previous = connection.execute("SELECT event_hash FROM audit_chain ORDER BY sequence_id DESC LIMIT 1").fetchone()
+        previous_hash = str(previous["event_hash"]) if previous else ""
+        payload_json = json.dumps({"source_table": source_table, "source_event_id": source_event_id, "event": event},
+            sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+        event_hash = SQLiteStore._audit_chain_hash(previous_hash, payload_json)
+        connection.execute("""INSERT INTO audit_chain
+            (source_table, source_event_id, occurred_at, payload_json, previous_hash, event_hash)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            (source_table, source_event_id, _timestamp_to_db(occurred_at), payload_json, previous_hash, event_hash))
+
+    def verify_audit_chain(self) -> tuple[str, ...]:
+        """Verify the local chain; external checkpoints are needed against full-database rewrites."""
+        with self._lock:
+            self._ensure_open()
+            rows = self._connection.execute("SELECT * FROM audit_chain ORDER BY sequence_id").fetchall()
+        errors: list[str] = []
+        previous_hash = ""
+        expected_sequence = 1
+        for row in rows:
+            sequence_id = int(row["sequence_id"])
+            if sequence_id != expected_sequence:
+                errors.append(f"sequence-gap:{expected_sequence}:{sequence_id}")
+            if row["previous_hash"] != previous_hash:
+                errors.append(f"previous-hash-mismatch:{sequence_id}")
+            if row["event_hash"] != self._audit_chain_hash(row["previous_hash"], row["payload_json"]):
+                errors.append(f"event-hash-mismatch:{sequence_id}")
+            try:
+                payload = json.loads(row["payload_json"])
+            except (TypeError, ValueError):
+                errors.append(f"invalid-payload:{sequence_id}")
+                payload = {}
+            if payload.get("source_table") != row["source_table"] or payload.get("source_event_id") != row["source_event_id"]:
+                errors.append(f"source-reference-mismatch:{sequence_id}")
+            previous_hash = str(row["event_hash"])
+            expected_sequence = sequence_id + 1
+        return tuple(errors)
 
     def integrity_check(self) -> tuple[str, ...]:
         """Return SQLite integrity and foreign-key checks; ('ok',) means clean."""
