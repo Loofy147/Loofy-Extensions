@@ -110,7 +110,7 @@ class SQLitePersistenceTests(unittest.TestCase):
 
         upgraded_store = SQLiteStore(self.database_path)
         self.store = upgraded_store
-        self.assertEqual(upgraded_store.schema_version, 3)
+        self.assertEqual(upgraded_store.schema_version, CURRENT_SCHEMA_VERSION)
         self.assertEqual(upgraded_store.events, ())
         self.assertEqual(upgraded_store.task_run_results, ())
         self.assertEqual(upgraded_store.integrity_check(), ("ok",))
