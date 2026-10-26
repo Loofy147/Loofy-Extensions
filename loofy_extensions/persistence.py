@@ -1090,10 +1090,34 @@ class SQLiteStore:
             except (TypeError, ValueError):
                 errors.append(f"invalid-payload:{sequence_id}")
                 payload = {}
-            if payload.get("source_table") != row["source_table"] or payload.get("source_event_id") != row["source_event_id"]:
+            source_table = str(row["source_table"])
+            source_event_id = int(row["source_event_id"])
+            if payload.get("source_table") != source_table or payload.get("source_event_id") != source_event_id:
                 errors.append(f"source-reference-mismatch:{sequence_id}")
+            if source_table not in {"lifecycle_audit_events", "grant_audit_events", "operation_audit_events"}:
+                errors.append(f"unknown-source-table:{sequence_id}")
+            else:
+                with self._lock:
+                    source_row = self._connection.execute(
+                        f"SELECT * FROM {source_table} WHERE event_id=?", (source_event_id,)
+                    ).fetchone()
+                if source_row is None:
+                    errors.append(f"source-event-missing:{sequence_id}")
+                else:
+                    source_event = dict(source_row)
+                    source_event.pop("event_id", None)
+                    if payload.get("event") != source_event:
+                        errors.append(f"source-event-mismatch:{sequence_id}")
             previous_hash = str(row["event_hash"])
             expected_sequence = sequence_id + 1
+        with self._lock:
+            for source_table in ("lifecycle_audit_events", "grant_audit_events", "operation_audit_events"):
+                source_count = int(self._connection.execute(f"SELECT COUNT(*) FROM {source_table}").fetchone()[0])
+                chain_count = int(self._connection.execute(
+                    "SELECT COUNT(*) FROM audit_chain WHERE source_table=?", (source_table,)
+                ).fetchone()[0])
+                if source_count != chain_count:
+                    errors.append(f"source-count-mismatch:{source_table}:{source_count}:{chain_count}")
         return tuple(errors)
 
     def integrity_check(self) -> tuple[str, ...]:
