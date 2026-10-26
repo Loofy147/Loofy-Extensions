@@ -63,6 +63,20 @@ class AuditChainTests(unittest.TestCase):
         errors = self.store.verify_audit_chain()
         self.assertIn("event-hash-mismatch:1", errors)
 
+    def test_source_audit_row_modification_is_detected(self) -> None:
+        self.store.append(event(1))
+        self.store._connection.execute(
+            "UPDATE operation_audit_events SET outcome='forged' WHERE event_id=1"
+        )
+        self.assertIn("source-event-mismatch:1", self.store.verify_audit_chain())
+
+    def test_source_audit_row_deletion_is_detected(self) -> None:
+        self.store.append(event(1))
+        self.store._connection.execute("DELETE FROM operation_audit_events WHERE event_id=1")
+        errors = self.store.verify_audit_chain()
+        self.assertIn("source-event-missing:1", errors)
+        self.assertTrue(any(error.startswith("source-count-mismatch:operation_audit_events") for error in errors))
+
     def test_deleting_an_interior_chain_entry_is_detected(self) -> None:
         self.store.append(event(1))
         self.store.append(event(2))
